@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="el">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Τετράδιο Κουζίνας</title>
+<meta name="description" content="Οι συνταγές μου, οργανωμένες ανά εστιατόριο.">
+<meta name="theme-color" content="#1f6b4f">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Συνταγές">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Commissioner:wght@500;700;800&family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Login / sign-up -->
+<div class="wrap" id="authView" hidden>
+  <div class="auth">
+    <div class="auth-card">
+      <h1>Τετράδιο Κουζίνας</h1>
+      <p id="authIntro">Συνδέσου για να δεις τις συνταγές σου.</p>
+      <form id="authForm" novalidate>
+        <label class="f" id="emailRow">Email<input id="a-email" type="email" autocomplete="email" inputmode="email"></label>
+        <label class="f" id="passRow">Κωδικός<input id="a-pass" type="password" autocomplete="current-password" minlength="6"></label>
+        <div id="a-err" class="err" hidden></div>
+        <div id="a-ok" class="ok" hidden></div>
+        <button class="btn primary" id="a-submit" type="submit">Σύνδεση</button>
+      </form>
+      <div class="auth-links" id="authLinks">
+        <button class="linkish" id="toSignup" type="button">Δεν έχω λογαριασμό</button>
+        <button class="linkish" id="toForgot" type="button">Ξέχασα τον κωδικό</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- App -->
+<div class="wrap" id="appView" hidden>
+  <header class="top">
+    <div class="brand">
+      <h1>Τετράδιο Κουζίνας</h1>
+      <span>Οι συνταγές μου, ανά εστιατόριο</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn primary" id="newRecipeBtn">+ Νέα συνταγή</button>
+      <div class="menu-wrap">
+        <button class="btn" id="menuBtn" aria-haspopup="true" aria-expanded="false">Μενού</button>
+        <div class="menu" id="menu" hidden>
+          <div class="who" id="whoEmail"></div>
+          <button id="backupBtn">Αντίγραφο ασφαλείας (λήψη)</button>
+          <label for="importFile">Εισαγωγή αντιγράφου…</label>
+          <button id="installBtn" hidden>Εγκατάσταση στο κινητό</button>
+          <button id="logoutBtn">Αποσύνδεση</button>
+        </div>
+        <input type="file" id="importFile" accept="application/json,.json" hidden>
+      </div>
+    </div>
+  </header>
+
+  <div id="notice" class="notice" hidden></div>
+
+  <div class="app">
+    <aside>
+      <p class="rail-label">Εστιατόρια</p>
+      <div class="rail" id="rail"></div>
+      <button class="btn rail-add" id="addRestBtn">+ Προσθήκη εστιατορίου</button>
+    </aside>
+    <main id="main"></main>
+  </div>
+</div>
+
+<div class="wrap" id="setupView" hidden>
+  <div class="empty"><h3>Η εφαρμογή δεν έχει ρυθμιστεί ακόμα</h3>Συμπλήρωσε τα στοιχεία του Supabase στο αρχείο config.js.</div>
+</div>
+
+<div id="overlay" class="overlay" hidden></div>
+<div id="toast" class="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
