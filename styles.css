@@ -174,3 +174,28 @@ legend { font-size: .85rem; font-weight: 600; padding: 0 4px; }
 .menu button, .menu label { text-align: left; background: none; border: 0; padding: 9px 10px; border-radius: 6px; cursor: pointer; font-size: .92rem; }
 .menu button:hover, .menu label:hover { background: var(--sunk); }
 .menu .who { padding: 6px 10px 8px; max-width: none; border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+
+/* Dish photos */
+.card.has-photo { padding-top: 0; overflow: hidden; }
+.card-photo { display: block; margin: 0 -16px 4px; aspect-ratio: 4 / 3; background: var(--sunk); overflow: hidden; }
+.card-photo img, .hero-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hero-photo { aspect-ratio: 16 / 9; max-height: 420px; width: 100%; background: var(--sunk); overflow: hidden; border-bottom: 1px solid var(--line); }
+.photo-box { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.photo-preview { width: 160px; max-width: 100%; aspect-ratio: 4 / 3; border-radius: 8px; overflow: hidden; background: var(--sunk); display: grid; place-items: center; border: 1px solid var(--line); }
+.photo-preview.empty { border-style: dashed; }
+.photo-preview img { width: 100%; height: 100%; object-fit: cover; }
+.photo-preview span { color: var(--muted); font-size: .85rem; text-align: center; padding: 8px; }
+.photo-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; min-width: 0; }
+.photo-actions label.btn { cursor: pointer; }
+.hint { color: var(--muted); font-size: .85rem; }
+
+/* Import */
+.modal { max-height: calc(100vh - 32px); overflow-y: auto; }
+.modal:has(.import-pick), .modal:has(.import-list) { width: min(540px, 100%); }
+.import-pick { display: flex; gap: 8px; flex-wrap: wrap; }
+.import-pick label.btn { cursor: pointer; flex: 1 1 180px; justify-content: center; padding: 12px 14px; }
+.import-list { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 6px; }
+.import-list label { display: flex; gap: 10px; align-items: flex-start; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.import-list label:hover { background: var(--sunk); }
+.import-list span { display: flex; flex-direction: column; min-width: 0; }
+.import-list small { color: var(--muted); }

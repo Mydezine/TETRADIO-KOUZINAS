@@ -26,6 +26,7 @@
     id: r.id, restaurantId: r.restaurant_id || "", title: r.title, category: r.category,
     yieldQty: r.yield_qty != null ? Number(r.yield_qty) : null, yieldUnit: r.yield_unit, prepMin: r.prep_min, cookMin: r.cook_min,
     ingredients: r.ingredients || [], steps: r.steps || [], allergens: r.allergens || [], notes: r.notes || "", createdAt: r.created_at,
+    photoPath: r.photo_path || null,
   });
   const toRec = (d) => ({
     restaurant_id: d.restaurantId || null, title: d.title, category: d.category || "Άλλο",
@@ -44,6 +45,7 @@
     S.recipes = p.data.map(fromRec);
     S.loaded = true;
     if (S.view !== "form") render(); else renderRail();
+    signPhotos();
   }
   function check(res) { if (res.error) throw res.error; return res.data; }
 
@@ -116,11 +118,12 @@
     </div>`;
     let body;
     if (!S.loaded) body = `<div class="empty"><h3>Φόρτωση συνταγών…</h3></div>`;
-    else if (!S.recipes.length) body = `<div class="empty"><h3>Δεν έχεις γράψει ακόμα καμία συνταγή</h3>Πρόσθεσε πρώτα τα εστιατόρια που έχεις δουλέψει και μετά γράψε τις συνταγές σου.<br>Τις συνταγές σου τις βλέπεις μόνο εσύ.<br><button class="btn primary" data-act="new">+ Νέα συνταγή</button></div>`;
+    else if (!S.recipes.length) body = `<div class="empty"><h3>Δεν έχεις γράψει ακόμα καμία συνταγή</h3>Πρόσθεσε πρώτα τα εστιατόρια που έχεις δουλέψει και μετά γράψε τις συνταγές σου.<br>Τις συνταγές σου τις βλέπεις μόνο εσύ.<br><button class="btn primary" data-act="new">+ Νέα συνταγή</button> <button class="btn" data-act="import">Ανέβασμα έτοιμης συνταγής</button></div>`;
     else if (!list.length) body = `<div class="empty"><h3>Καμία συνταγή εδώ</h3>${S.q || S.cat ? "Δοκίμασε άλλη αναζήτηση ή κατηγορία." : "Δεν υπάρχουν ακόμα συνταγές σε αυτό το εστιατόριο."}<br><button class="btn primary" data-act="new">+ Νέα συνταγή</button></div>`;
     else body = `<div class="grid">${list.map((r) => {
       const t = (r.prepMin || 0) + (r.cookMin || 0);
-      return `<button class="card" data-open="${esc(r.id)}">
+      return `<button class="card ${r.photoPath ? "has-photo" : ""}" data-open="${esc(r.id)}">
+        ${r.photoPath ? `<span class="card-photo">${photoImg(thumbOf(r.photoPath))}</span>` : ""}
         <span class="tag">${esc(r.category || "Άλλο")}</span>
         <h3>${esc(r.title)}</h3>
         <div class="meta">${S.sel === "all" ? `<span>${esc(restName(r.restaurantId))}</span>` : ""}
@@ -154,6 +157,7 @@
     ].filter(Boolean);
     main.innerHTML = `<div style="margin-bottom:12px"><button class="btn ghost" data-act="back">← Πίσω στις συνταγές</button></div>
     <article class="sheet">
+      ${r.photoPath ? `<div class="hero-photo">${photoImg(r.photoPath)}</div>` : ""}
       <div class="sheet-head">
         <span class="tag">${esc(r.category || "Άλλο")}</span>
         <h2>${esc(r.title)}</h2>
@@ -189,6 +193,7 @@
     const restOpts = `<option value="">Χωρίς εστιατόριο</option>` + S.restaurants.map((r) => `<option value="${esc(r.id)}" ${e.restaurantId === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("");
     main.innerHTML = `<form class="form" id="recForm" novalidate>
       <h2>${e.id ? "Επεξεργασία συνταγής" : "Νέα συνταγή"}</h2>
+      <div class="photo-box" id="photoBox"></div>
       <div class="row">
         <label class="f" style="grid-column: 1 / -1">Όνομα πιάτου<input id="f-title" required value="${esc(e.title)}" placeholder="π.χ. Ριζότο μανιταριών με τρούφα"></label>
       </div>
@@ -216,7 +221,8 @@
       </div>
     </form>`;
     $("recForm").addEventListener("submit", saveRecipe);
-    $("f-title").focus();
+    renderPhotoBox();
+    if (!e.title) $("f-title").focus();
   }
 
   function render() {
@@ -253,10 +259,12 @@
       const row = id
         ? check(await sb.from("recipes").update(toRec(data)).eq("id", id).select().single())
         : check(await sb.from("recipes").insert(toRec(data)).select().single());
-      const rec = fromRec(row);
+      let rec = fromRec(row);
+      let photoFailed = false;
+      try { rec = await applyPhotoChange(rec, S.edit); } catch (pe) { console.error(pe); photoFailed = true; }
       S.recipes = S.recipes.filter((r) => r.id !== rec.id).concat(rec).sort((a, b) => a.title.localeCompare(b.title, "el"));
       S.edit = null; S.id = rec.id; S.scale = null; S.view = "detail";
-      toast("Η συνταγή αποθηκεύτηκε"); render(); window.scrollTo(0, 0);
+      toast(photoFailed ? "Η συνταγή αποθηκεύτηκε, αλλά η φωτογραφία δεν ανέβηκε. Δοκίμασε ξανά." : "Η συνταγή αποθηκεύτηκε"); render(); window.scrollTo(0, 0);
     } catch (e) {
       btn.disabled = false; btn.textContent = "Αποθήκευση";
       err.textContent = writeError(e); err.hidden = false;
@@ -322,14 +330,16 @@
     const rest = S.restaurants.find((x) => x.id === S.sel);
     switch (t.dataset.act) {
       case "new": newRecipe(); break;
+      case "import": importDialog(); break;
       case "back": S.view = "list"; render(); break;
       case "reset-scale": S.scale = null; renderDetail(); break;
       case "edit": S.edit = { ...r }; S.view = "form"; render(); break;
-      case "dup": S.edit = { ...r, id: undefined, title: r.title + " (αντίγραφο)" }; S.view = "form"; render(); break;
-      case "cancel-form": S.view = S.edit && S.edit.id ? "detail" : "list"; S.edit = null; render(); break;
+      case "dup": S.edit = { ...r, id: undefined, photoPath: null, title: r.title + " (αντίγραφο)" }; S.view = "form"; render(); break;
+      case "cancel-form": if (S.edit && S.edit.newPhoto) URL.revokeObjectURL(S.edit.newPhoto.preview); S.view = S.edit && S.edit.id ? "detail" : "list"; S.edit = null; render(); break;
       case "del":
         confirmBox("Διαγραφή συνταγής;", `Η συνταγή «${r.title}» θα σβηστεί οριστικά.`, "Διαγραφή", async () => {
           check(await sb.from("recipes").delete().eq("id", r.id));
+          removePhotoFiles(r.photoPath);
           S.recipes = S.recipes.filter((x) => x.id !== r.id); S.view = "list"; render(); toast("Η συνταγή διαγράφηκε");
         }); break;
       case "edit-rest": restaurantForm(rest); break;
@@ -345,7 +355,290 @@
     }
   });
   $("newRecipeBtn").addEventListener("click", newRecipe);
+  $("importBtn").addEventListener("click", importDialog);
+  $("importRecipeMenu").addEventListener("click", importDialog);
   $("addRestBtn").addEventListener("click", () => restaurantForm());
+
+  // ---------- dish photos ----------
+  // Files live in the private bucket at <user id>/<recipe id>/<time>.jpg, with a small copy *_t.jpg for the cards.
+  const BUCKET = "recipe-photos";
+  const photoUrls = {}; // path -> { url, at }
+  const thumbOf = (p) => p.replace(/\.jpg$/, "_t.jpg");
+  function photoImg(path) {
+    const u = photoUrls[path];
+    return `<img data-photo="${esc(path)}" alt="" loading="lazy" ${u ? `src="${esc(u.url)}"` : ""}>`;
+  }
+  async function signPhotos() {
+    const now = Date.now();
+    const paths = [];
+    S.recipes.forEach((r) => { if (r.photoPath) paths.push(r.photoPath, thumbOf(r.photoPath)); });
+    const need = paths.filter((p) => !photoUrls[p] || now - photoUrls[p].at > 50 * 60 * 1000);
+    if (!need.length) return;
+    for (let i = 0; i < need.length; i += 100) {
+      const { data, error } = await sb.storage.from(BUCKET).createSignedUrls(need.slice(i, i + 100), 3600);
+      if (error || !data) continue;
+      data.forEach((d) => { if (d.signedUrl && d.path) photoUrls[d.path] = { url: d.signedUrl, at: now }; });
+    }
+    document.querySelectorAll("img[data-photo]").forEach((img) => {
+      const u = photoUrls[img.dataset.photo];
+      if (u && img.getAttribute("src") !== u.url) img.src = u.url;
+    });
+  }
+  window.addEventListener("focus", () => { if (S.user) signPhotos(); });
+
+  // Shrinks a picture to a JPEG no wider/taller than `max` pixels.
+  async function resizeImage(file, max, quality) {
+    let src;
+    try { src = await createImageBitmap(file, { imageOrientation: "from-image" }); }
+    catch {
+      src = await new Promise((res, rej) => {
+        const img = new Image(); img.onload = () => res(img); img.onerror = () => rej(new Error("bad_image"));
+        img.src = URL.createObjectURL(file);
+      });
+    }
+    const w = src.width, h = src.height;
+    const k = Math.min(1, max / Math.max(w, h));
+    const c = document.createElement("canvas");
+    c.width = Math.round(w * k); c.height = Math.round(h * k);
+    c.getContext("2d").drawImage(src, 0, 0, c.width, c.height);
+    const blob = await new Promise((res) => c.toBlob(res, "image/jpeg", quality));
+    if (!blob) throw new Error("bad_image");
+    return blob;
+  }
+
+  function renderPhotoBox() {
+    const box = $("photoBox"); if (!box) return;
+    const e = S.edit || {};
+    const current = e.newPhoto ? e.newPhoto.preview : (!e.removePhoto && e.photoPath && photoUrls[e.photoPath] ? photoUrls[e.photoPath].url : null);
+    const hasPhoto = e.newPhoto || (!e.removePhoto && e.photoPath);
+    box.innerHTML = `
+      <div class="photo-preview ${hasPhoto ? "" : "empty"}">${hasPhoto ? (current ? `<img src="${esc(current)}" alt="Φωτογραφία πιάτου">` : `<span>Φόρτωση φωτογραφίας…</span>`) : `<span>Χωρίς φωτογραφία</span>`}</div>
+      <div class="photo-actions">
+        <label class="btn" for="photoInput">${hasPhoto ? "Αλλαγή φωτογραφίας" : "+ Φωτογραφία πιάτου"}</label>
+        ${hasPhoto ? `<button type="button" class="btn ghost" id="photoRemove">Αφαίρεση</button>` : ""}
+        <input type="file" id="photoInput" accept="image/*" hidden>
+        <span class="hint" id="photoMsg"></span>
+      </div>`;
+    $("photoInput").addEventListener("change", async (ev) => {
+      const file = ev.target.files[0]; ev.target.value = "";
+      if (!file) return;
+      const msg = $("photoMsg"); msg.textContent = "Επεξεργασία φωτογραφίας…";
+      try {
+        const large = await resizeImage(file, 1600, 0.85);
+        const thumb = await resizeImage(large, 480, 0.8);
+        if (e.newPhoto) URL.revokeObjectURL(e.newPhoto.preview);
+        e.newPhoto = { large, thumb, preview: URL.createObjectURL(large) };
+        e.removePhoto = false;
+        renderPhotoBox();
+      } catch { msg.textContent = "Δεν άνοιξε η φωτογραφία. Δοκίμασε JPG ή PNG."; }
+    });
+    const rm = $("photoRemove");
+    if (rm) rm.addEventListener("click", () => {
+      if (e.newPhoto) { URL.revokeObjectURL(e.newPhoto.preview); e.newPhoto = null; }
+      else e.removePhoto = true;
+      renderPhotoBox();
+    });
+  }
+
+  function removePhotoFiles(path) {
+    if (path) sb.storage.from(BUCKET).remove([path, thumbOf(path)]).catch(() => {});
+  }
+
+  // After the recipe row is saved: upload a new photo or remove the old one.
+  async function applyPhotoChange(rec, edit) {
+    const old = edit && edit.id ? edit.photoPath : null;
+    if (edit && edit.newPhoto) {
+      const path = `${S.user.id}/${rec.id}/${Date.now()}.jpg`;
+      const opts = { contentType: "image/jpeg", cacheControl: "31536000", upsert: false };
+      check(await sb.storage.from(BUCKET).upload(path, edit.newPhoto.large, opts));
+      check(await sb.storage.from(BUCKET).upload(thumbOf(path), edit.newPhoto.thumb, opts));
+      photoUrls[path] = { url: edit.newPhoto.preview, at: Date.now() };
+      photoUrls[thumbOf(path)] = { url: edit.newPhoto.preview, at: Date.now() };
+      check(await sb.from("recipes").update({ photo_path: path }).eq("id", rec.id));
+      removePhotoFiles(old);
+      setTimeout(signPhotos, 1500);
+      return { ...rec, photoPath: path };
+    }
+    if (edit && edit.removePhoto && old) {
+      check(await sb.from("recipes").update({ photo_path: null }).eq("id", rec.id));
+      removePhotoFiles(old);
+      return { ...rec, photoPath: null };
+    }
+    return rec;
+  }
+
+  // ---------- import recipes from a photo, PDF, Word file or text ----------
+  const fileToBase64 = (blob) => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(String(r.result).split(",")[1]);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(blob);
+  });
+  let mammothLoading = null;
+  function loadMammoth() {
+    if (window.mammoth) return Promise.resolve(window.mammoth);
+    mammothLoading = mammothLoading || new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js";
+      s.onload = () => res(window.mammoth); s.onerror = () => { mammothLoading = null; rej(new Error("load")); };
+      document.head.appendChild(s);
+    });
+    return mammothLoading;
+  }
+
+  // Free, offline fallback for plain text: finds title, ingredients, steps and notes by their headings.
+  function parseRecipeText(text) {
+    const lines = text.split(/\r?\n/).map((l) => l.trim());
+    const head = (l, words) => new RegExp(`^(${words})(?=[\\s:.]|$)[^\\n]{0,30}$`, "iu").test(l.replace(/[*#_]/g, "").trim());
+    const ING = "υλικά|υλικα|συστατικά|συστατικα|ingredients";
+    const STEP = "εκτέλεση|εκτελεση|οδηγίες|οδηγιες|τρόπος|τροπος|παρασκευή|παρασκευη|διαδικασία|διαδικασια|method|directions|instructions|preparation|steps";
+    const NOTE = "σημειώσεις|σημειωσεις|σημείωση|σημειωση|tips|notes|μυστικά|μυστικα";
+    let title = "", section = "", ings = [], steps = [], notes = [], yieldQty = null, yieldUnit = "μερίδες";
+    for (const raw of lines) {
+      if (!raw) continue;
+      const l = raw.replace(/^[-•*·▪●]\s*/, "");
+      const y = l.match(/(\d+(?:[.,]\d+)?)\s*(μερίδες|μερίδα|μεριδες|άτομα|ατομα|portions|servings)/i);
+      if (y && !yieldQty) { yieldQty = parseFloat(y[1].replace(",", ".")); yieldUnit = /άτομ|ατομ/i.test(y[2]) ? "άτομα" : "μερίδες"; if (l.length < 30) continue; }
+      if (head(l, ING)) { section = "ing"; continue; }
+      if (head(l, STEP)) { section = "step"; continue; }
+      if (head(l, NOTE)) { section = "note"; continue; }
+      if (!title && !section) { title = l.replace(/[*#_]/g, "").trim(); continue; }
+      if (section === "ing") ings.push(l);
+      else if (section === "step") steps.push(l.replace(/^(\d+|[α-ω])[.)]\s*/i, ""));
+      else if (section === "note") notes.push(l);
+      else if (/^\d/.test(l) && l.length < 60) ings.push(l);
+      else steps.push(l.replace(/^(\d+)[.)]\s*/, ""));
+    }
+    if (!title && !ings.length && !steps.length) return [];
+    return [{ title: title || "Συνταγή χωρίς όνομα", category: "Άλλο", yieldQty, yieldUnit: yieldQty ? yieldUnit : "μερίδες", prepMin: null, cookMin: null,
+      ingredients: parseIngredients(ings.join("\n")), steps, allergens: [], notes: notes.join("\n") }];
+  }
+
+  const fromAi = (r) => ({
+    title: String(r.title || "Συνταγή χωρίς όνομα"), category: CATS.includes(r.category) ? r.category : "Άλλο",
+    yieldQty: typeof r.yield_qty === "number" && r.yield_qty > 0 ? r.yield_qty : null, yieldUnit: r.yield_unit || (r.yield_qty ? "μερίδες" : ""),
+    prepMin: Number.isFinite(r.prep_min) && r.prep_min > 0 ? r.prep_min : null, cookMin: Number.isFinite(r.cook_min) && r.cook_min > 0 ? r.cook_min : null,
+    ingredients: (Array.isArray(r.ingredients) ? r.ingredients : []).filter((i) => i && i.name).map((i) => ({ qty: typeof i.qty === "number" ? i.qty : null, unit: i.unit || "", name: String(i.name) })),
+    steps: (Array.isArray(r.steps) ? r.steps : []).map(String).filter(Boolean),
+    allergens: (Array.isArray(r.allergens) ? r.allergens : []).filter((a) => ALLERGENS.includes(a)),
+    notes: r.notes || "",
+  });
+
+  const AI_ERRORS = {
+    not_configured: null, bad_api_key: null, // fall back to the simple reader
+    too_large: "Το αρχείο είναι πολύ μεγάλο. Δοκίμασε μικρότερο PDF ή μία σελίδα τη φορά.",
+    unsupported_file: "Αυτός ο τύπος αρχείου δεν υποστηρίζεται. Δοκίμασε φωτογραφία, PDF, Word ή κείμενο.",
+    too_long: "Το αρχείο έχει πάρα πολλές συνταγές μαζί. Ανέβασέ το σε μικρότερα κομμάτια.",
+    busy: "Η υπηρεσία είναι απασχολημένη. Δοκίμασε ξανά σε ένα λεπτό.",
+    refused: "Δεν μπόρεσε να διαβαστεί αυτό το αρχείο. Δοκίμασε να επικολλήσεις το κείμενο.",
+  };
+
+  // Returns { recipes } or { error } (error text for the user) or { fallback: true } when smart reading is unavailable.
+  async function readWithAi(body) {
+    try {
+      const { data, error } = await sb.functions.invoke("import-recipe", { body });
+      if (!error) return { recipes: (data.recipes || []).map(fromAi) };
+      let code = "";
+      try { code = (await error.context.json()).error; } catch { /* function missing or offline */ }
+      if (!code || code in AI_ERRORS && AI_ERRORS[code] === null) return { fallback: true };
+      return { error: AI_ERRORS[code] || "Κάτι δεν πήγε καλά στη μετατροπή. Δοκίμασε ξανά." };
+    } catch { return { fallback: true }; }
+  }
+
+  function importDialog() {
+    toggleMenu(false);
+    modal(`<h3>Ανέβασμα συνταγής</h3>
+      <p>Φωτογραφία από το τετράδιό σου, PDF, Word ή κείμενο. Η εφαρμογή τη διαβάζει και τη μετατρέπει σε συνταγή, για να την ελέγξεις πριν την αποθηκεύσεις.</p>
+      <div class="import-pick">
+        <label class="btn" for="imp-camera">Φωτογραφία</label>
+        <label class="btn" for="imp-file">Αρχείο (PDF, Word, κείμενο)</label>
+        <input type="file" id="imp-camera" accept="image/*" capture="environment" hidden>
+        <input type="file" id="imp-file" accept="image/*,application/pdf,.pdf,.docx,.txt,.md,text/plain" hidden>
+      </div>
+      <div id="imp-chosen" class="hint" hidden></div>
+      <label class="f">ή επικόλλησε το κείμενο<textarea id="imp-text" rows="6" placeholder="Μουσακάς&#10;Υλικά&#10;1,5 kg μελιτζάνες&#10;…&#10;Εκτέλεση&#10;…"></textarea></label>
+      <div id="imp-err" class="err" hidden></div>
+      <div id="imp-status" class="ok" hidden></div>
+      <div class="form-actions"><button class="btn" data-act="close">Ακύρωση</button><button class="btn primary" id="imp-go">Μετατροπή σε συνταγή</button></div>`, () => {
+      let chosen = null;
+      const pick = (ev) => {
+        chosen = ev.target.files[0] || null; ev.target.value = "";
+        const c = $("imp-chosen"); c.hidden = !chosen; c.textContent = chosen ? `Επιλέχθηκε: ${chosen.name}` : "";
+      };
+      $("imp-camera").addEventListener("change", pick);
+      $("imp-file").addEventListener("change", pick);
+      $("imp-go").addEventListener("click", async () => {
+        const err = $("imp-err"), status = $("imp-status"), go = $("imp-go");
+        err.hidden = true;
+        let text = $("imp-text").value.trim();
+        if (!chosen && !text) { err.textContent = "Διάλεξε φωτογραφία ή αρχείο, ή επικόλλησε το κείμενο της συνταγής."; err.hidden = false; return; }
+        go.disabled = true; status.hidden = false; status.textContent = "Διαβάζω τη συνταγή… Μπορεί να πάρει έως ένα λεπτό.";
+        try {
+          const body = {};
+          if (chosen) {
+            const name = chosen.name.toLowerCase();
+            if (chosen.type.startsWith("image/")) {
+              body.file = { media_type: "image/jpeg", data: await fileToBase64(await resizeImage(chosen, 2000, 0.85)) };
+            } else if (chosen.type === "application/pdf" || name.endsWith(".pdf")) {
+              if (chosen.size > 9 * 1024 * 1024) throw new Error(AI_ERRORS.too_large);
+              body.file = { media_type: "application/pdf", data: await fileToBase64(chosen) };
+            } else if (name.endsWith(".docx")) {
+              const m = await loadMammoth();
+              const r = await m.extractRawText({ arrayBuffer: await chosen.arrayBuffer() });
+              text = [r.value, text].filter(Boolean).join("\n\n");
+            } else if (name.endsWith(".doc")) {
+              throw new Error("Τα παλιά αρχεία .doc δεν διαβάζονται. Άνοιξέ το στο Word και αποθήκευσέ το ως .docx.");
+            } else {
+              text = [await chosen.text(), text].filter(Boolean).join("\n\n");
+            }
+          }
+          if (text) body.text = text;
+          let result = await readWithAi(body);
+          if (result.fallback) {
+            if (!text) throw new Error("Η αυτόματη ανάγνωση φωτογραφιών και PDF δεν έχει ενεργοποιηθεί ακόμα. Επικόλλησε το κείμενο της συνταγής.");
+            result = { recipes: parseRecipeText(text) };
+          }
+          if (result.error) throw new Error(result.error);
+          if (!result.recipes.length) throw new Error("Δεν βρήκα συνταγή σε αυτό. Δοκίμασε πιο καθαρή φωτογραφία ή επικόλλησε το κείμενο.");
+          closeModal();
+          reviewImported(result.recipes);
+        } catch (e) {
+          status.hidden = true; go.disabled = false;
+          err.textContent = e && e.message && /[α-ω]/i.test(e.message) ? e.message : "Δεν άνοιξε το αρχείο. Δοκίμασε ξανά ή επικόλλησε το κείμενο.";
+          err.hidden = false;
+        }
+      });
+    });
+  }
+
+  function reviewImported(list) {
+    const restId = S.restaurants.some((r) => r.id === S.sel) ? S.sel : "";
+    if (list.length === 1) {
+      S.edit = { ...list[0], restaurantId: restId };
+      S.view = "form"; render(); window.scrollTo(0, 0);
+      toast("Έλεγξε τη συνταγή και πάτα Αποθήκευση");
+      return;
+    }
+    const restOpts = `<option value="">Χωρίς εστιατόριο</option>` + S.restaurants.map((r) => `<option value="${esc(r.id)}" ${restId === r.id ? "selected" : ""}>${esc(r.name)}</option>`).join("");
+    modal(`<h3>Βρέθηκαν ${list.length} συνταγές</h3>
+      <p>Διάλεξε ποιες θα αποθηκευτούν. Μετά μπορείς να ανοίξεις την καθεμία και να τη διορθώσεις.</p>
+      <label class="f">Εστιατόριο<select id="imp-rest">${restOpts}</select></label>
+      <div class="import-list">${list.map((r, i) => `<label><input type="checkbox" id="imp-${i}" checked> <span><b>${esc(r.title)}</b><small>${r.ingredients.length} υλικά · ${r.steps.length} βήματα</small></span></label>`).join("")}</div>
+      <div id="imp-err" class="err" hidden></div>
+      <div class="form-actions"><button class="btn" data-act="close">Ακύρωση</button><button class="btn primary" id="imp-save">Αποθήκευση</button></div>`, () => {
+      $("imp-save").addEventListener("click", async () => {
+        const rest = $("imp-rest").value;
+        const rows = list.filter((_, i) => $("imp-" + i).checked).map((r) => toRec({ ...r, restaurantId: rest }));
+        if (!rows.length) { closeModal(); return; }
+        $("imp-save").disabled = true;
+        try {
+          check(await sb.from("recipes").insert(rows));
+          closeModal(); S.view = "list"; S.sel = rest || "all"; await loadAll();
+          toast(`Αποθηκεύτηκαν ${rows.length} συνταγές`);
+        } catch (e) { $("imp-save").disabled = false; const er = $("imp-err"); er.textContent = writeError(e); er.hidden = false; }
+      });
+    });
+  }
 
   // ---------- menu: backup, import, install, logout ----------
   function toggleMenu(open) { $("menu").hidden = !open; $("menuBtn").setAttribute("aria-expanded", String(open)); }

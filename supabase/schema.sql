@@ -50,3 +50,33 @@ create policy "own recipes" on public.recipes
   for all to authenticated
   using ((select auth.uid()) = user_id)
   with check ((select auth.uid()) = user_id);
+
+-- ---------------------------------------------------------------
+-- Φωτογραφίες πιάτων (προστέθηκε μετά). Κάθε χρήστης ανεβάζει και
+-- βλέπει μόνο τις δικές του, στον φάκελο <user id>/ του bucket.
+-- ---------------------------------------------------------------
+alter table public.recipes add column if not exists photo_path text;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('recipe-photos', 'recipe-photos', false, 5242880, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do nothing;
+
+drop policy if exists "own recipe photos read" on storage.objects;
+create policy "own recipe photos read" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'recipe-photos' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists "own recipe photos insert" on storage.objects;
+create policy "own recipe photos insert" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'recipe-photos' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists "own recipe photos update" on storage.objects;
+create policy "own recipe photos update" on storage.objects
+  for update to authenticated
+  using (bucket_id = 'recipe-photos' and (storage.foldername(name))[1] = (select auth.uid())::text);
+
+drop policy if exists "own recipe photos delete" on storage.objects;
+create policy "own recipe photos delete" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'recipe-photos' and (storage.foldername(name))[1] = (select auth.uid())::text);
