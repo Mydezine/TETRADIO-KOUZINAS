@@ -5,7 +5,7 @@
   const ALLERGENS = ["Γλουτένη", "Καρκινοειδή", "Αυγά", "Ψάρια", "Αράπικα φιστίκια", "Σόγια", "Γάλα", "Ξηροί καρποί", "Σέλινο", "Μουστάρδα", "Σουσάμι", "Θειώδη", "Λούπινο", "Μαλάκια"];
   const UNITS = ["g", "gr", "γρ", "γρ.", "kg", "κιλό", "κιλά", "mg", "ml", "l", "lt", "λτ", "cl", "dl", "τεμ", "τεμ.", "τεμάχια", "κ.σ.", "κσ", "κ.γ.", "κγ", "φλ.", "φλιτζάνι", "φλιτζάνια", "πρέζα", "ματσάκι", "ματσάκια", "σκελίδα", "σκελίδες", "φύλλα", "κλωνάρια", "κλωνάρι", "φέτες", "φέτα", "oz", "lb", "tbsp", "tsp", "cup", "pcs"];
 
-  const S = { restaurants: [], recipes: [], sel: "all", q: "", cat: "", view: "list", id: null, scale: null, edit: null, loaded: false, user: null };
+  const S = { restaurants: [], recipes: [], sel: "all", q: "", cat: "", view: "list", id: null, scale: null, edit: null, loaded: false, user: null, isAdmin: false, viewing: null, chefs: null };
   const $ = (id) => document.getElementById(id);
   const main = $("main");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -35,9 +35,10 @@
   });
 
   async function loadAll() {
+    const owner = S.viewing ? S.viewing.id : S.user.id;
     const [r, p] = await Promise.all([
-      sb.from("restaurants").select("*").order("name"),
-      sb.from("recipes").select("*").order("title"),
+      sb.from("restaurants").select("*").eq("user_id", owner).order("name"),
+      sb.from("recipes").select("*").eq("user_id", owner).order("title"),
     ]);
     if (r.error || p.error) { notice("Δεν φόρτωσαν οι συνταγές. Έλεγξε τη σύνδεσή σου και ανανέωσε τη σελίδα."); S.loaded = true; render(); return; }
     notice("");
@@ -118,7 +119,7 @@
     </div>`;
     let body;
     if (!S.loaded) body = `<div class="empty"><h3>Φόρτωση συνταγών…</h3></div>`;
-    else if (!S.recipes.length) body = `<div class="empty"><h3>Δεν έχεις γράψει ακόμα καμία συνταγή</h3>Πρόσθεσε πρώτα τα εστιατόρια που έχεις δουλέψει και μετά γράψε τις συνταγές σου.<br>Τις συνταγές σου τις βλέπεις μόνο εσύ.<br><button class="btn primary" data-act="new">+ Νέα συνταγή</button> <button class="btn" data-act="import">Ανέβασμα έτοιμης συνταγής</button></div>`;
+    else if (!S.recipes.length) body = `<div class="empty"><h3>Δεν έχεις γράψει ακόμα καμία συνταγή</h3>Πρόσθεσε πρώτα τα εστιατόρια που έχεις δουλέψει και μετά γράψε τις συνταγές σου.<br>Οι άλλοι μάγειρες δεν βλέπουν τις συνταγές σου.<br><button class="btn primary" data-act="new">+ Νέα συνταγή</button> <button class="btn" data-act="import">Ανέβασμα έτοιμης συνταγής</button></div>`;
     else if (!list.length) body = `<div class="empty"><h3>Καμία συνταγή εδώ</h3>${S.q || S.cat ? "Δοκίμασε άλλη αναζήτηση ή κατηγορία." : "Δεν υπάρχουν ακόμα συνταγές σε αυτό το εστιατόριο."}<br><button class="btn primary" data-act="new">+ Νέα συνταγή</button></div>`;
     else body = `<div class="grid">${list.map((r) => {
       const t = (r.prepMin || 0) + (r.cookMin || 0);
@@ -226,8 +227,12 @@
   }
 
   function render() {
+    document.body.classList.toggle("readonly", !!S.viewing);
+    document.querySelector(".app").classList.toggle("admin-mode", S.view === "admin");
+    renderBanner();
     renderRail();
-    if (S.view === "detail") renderDetail();
+    if (S.view === "admin") renderAdmin();
+    else if (S.view === "detail") renderDetail();
     else if (S.view === "form") renderForm();
     else renderList();
   }
@@ -322,8 +327,12 @@
 
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".menu-wrap")) toggleMenu(false);
-    const t = e.target.closest("[data-sel],[data-open],[data-act]");
+    const t = e.target.closest("[data-sel],[data-open],[data-act],[data-chef]");
     if (!t || t.closest("#overlay")) return;
+    if (t.dataset.chef) { openChef(t.dataset.chef); return; }
+    if (t.dataset.act === "admin") { openAdmin(); return; }
+    if (t.dataset.act === "my-notebook") { S.viewing = null; S.view = "list"; S.sel = "all"; S.loaded = false; render(); loadAll(); return; }
+    if (S.viewing && ["new", "import", "edit", "dup", "del", "edit-rest", "del-rest"].includes(t.dataset.act)) return;
     if (t.dataset.sel !== undefined) { S.sel = t.dataset.sel; S.view = "list"; render(); return; }
     if (t.dataset.open) { S.id = t.dataset.open; S.scale = null; S.view = "detail"; render(); window.scrollTo(0, 0); return; }
     const r = S.recipes.find((x) => x.id === S.id);
@@ -708,7 +717,7 @@
     authMode = mode;
     const texts = {
       login: ["Συνδέσου για να δεις τις συνταγές σου.", "Σύνδεση", "Δεν έχω λογαριασμό"],
-      signup: ["Φτιάξε λογαριασμό με το email σου. Τις συνταγές σου θα τις βλέπεις μόνο εσύ.", "Δημιουργία λογαριασμού", "Έχω ήδη λογαριασμό"],
+      signup: ["Φτιάξε λογαριασμό με το email σου. Οι άλλοι μάγειρες δεν βλέπουν τις συνταγές σου. Ο διαχειριστής της εφαρμογής έχει πρόσβαση για υποστήριξη.", "Δημιουργία λογαριασμού", "Έχω ήδη λογαριασμό"],
       forgot: ["Γράψε το email σου και θα σου στείλουμε σύνδεσμο για νέο κωδικό.", "Αποστολή συνδέσμου", "Πίσω στη σύνδεση"],
       reset: ["Γράψε τον νέο σου κωδικό.", "Αποθήκευση κωδικού", "Πίσω στη σύνδεση"],
     }[mode];
@@ -766,17 +775,64 @@
   function showApp() {
     $("authView").hidden = true; $("appView").hidden = false;
     $("whoEmail").textContent = (S.user && S.user.email) || "";
-    render(); loadAll();
+    render(); loadAll(); checkAdmin();
+  }
+
+  // ---------- owner / admin view ----------
+  async function checkAdmin() {
+    const { data, error } = await sb.rpc("is_admin");
+    S.isAdmin = !error && data === true;
+    $("adminBtn").hidden = !S.isAdmin;
+  }
+  function renderBanner() {
+    const b = $("viewBanner");
+    if (!S.viewing) { b.hidden = true; return; }
+    b.hidden = false;
+    b.innerHTML = `<span>Βλέπεις τις συνταγές του <b>${esc(S.viewing.email)}</b> · μόνο ανάγνωση</span>
+      <span class="banner-actions"><button class="btn" data-act="admin">← Όλοι οι μάγειρες</button><button class="btn ghost" data-act="my-notebook">Οι δικές μου συνταγές</button></span>`;
+  }
+  async function openAdmin() {
+    S.viewing = null; S.view = "admin"; S.chefs = null; render(); window.scrollTo(0, 0);
+    const { data, error } = await sb.rpc("admin_chefs");
+    if (error) { S.chefs = []; notice("Δεν φόρτωσε η λίστα μαγείρων. Ανανέωσε τη σελίδα."); }
+    else S.chefs = data || [];
+    if (S.view === "admin") renderAdmin();
+  }
+  function openChef(id) {
+    const chef = (S.chefs || []).find((c) => c.id === id);
+    if (!chef) return;
+    if (chef.id === S.user.id) { S.viewing = null; }
+    else S.viewing = { id: chef.id, email: chef.email };
+    S.view = "list"; S.sel = "all"; S.q = ""; S.cat = ""; S.loaded = false; S.recipes = []; S.restaurants = [];
+    render(); loadAll(); window.scrollTo(0, 0);
+  }
+  function renderAdmin() {
+    const fmtDate = (d) => d ? new Date(d).toLocaleDateString("el-GR", { day: "numeric", month: "short", year: "numeric" }) : "—";
+    const head = `<div class="rest-head"><div><h2>Διαχείριση</h2><p>Όλοι οι μάγειρες της εφαρμογής. Πάτα έναν για να δεις τις συνταγές του.</p></div>
+      <div class="sheet-actions"><button class="btn" data-act="my-notebook">Οι δικές μου συνταγές</button></div></div>`;
+    if (!S.chefs) { main.innerHTML = head + `<div class="empty"><h3>Φόρτωση μαγείρων…</h3></div>`; return; }
+    const tot = S.chefs.reduce((a, c) => ({ r: a.r + Number(c.recipes), e: a.e + Number(c.restaurants) }), { r: 0, e: 0 });
+    const stats = `<div class="facts admin-stats">
+      <div class="fact"><small>Μάγειρες</small><b>${S.chefs.length}</b></div>
+      <div class="fact"><small>Συνταγές</small><b>${tot.r}</b></div>
+      <div class="fact"><small>Εστιατόρια</small><b>${tot.e}</b></div></div>`;
+    const rows = S.chefs.map((c) => `<button class="chef" data-chef="${esc(c.id)}">
+        <span class="chef-main"><b>${esc(c.email)}</b>${c.id === S.user.id ? ' <span class="example">ΕΣΥ</span>' : ""}
+          <small>Μέλος από ${esc(fmtDate(c.created_at))} · τελευταία σύνδεση ${esc(fmtDate(c.last_sign_in_at))}</small></span>
+        <span class="chef-num"><b>${Number(c.recipes)}</b><small>συνταγές</small></span>
+        <span class="chef-num"><b>${Number(c.restaurants)}</b><small>εστιατόρια</small></span>
+      </button>`).join("");
+    main.innerHTML = head + stats + `<div class="chefs">${rows || '<div class="empty">Δεν υπάρχουν ακόμα μάγειρες.</div>'}</div>`;
   }
 
   sb.auth.onAuthStateChange((event, session) => {
     if (event === "PASSWORD_RECOVERY") { S.user = session && session.user; showAuth("reset"); return; }
     const uid = session && session.user && session.user.id;
     if (uid && (!S.user || S.user.id !== uid)) {
-      S.user = session.user; S.restaurants = []; S.recipes = []; S.loaded = false; S.view = "list"; S.sel = "all";
+      S.user = session.user; S.restaurants = []; S.recipes = []; S.loaded = false; S.view = "list"; S.sel = "all"; S.viewing = null; S.isAdmin = false; S.chefs = null; $("adminBtn").hidden = true;
       if (authMode !== "reset" || $("authView").hidden) setTimeout(showApp, 0);
     } else if (!uid) {
-      S.user = null; S.restaurants = []; S.recipes = []; S.loaded = false;
+      S.user = null; S.restaurants = []; S.recipes = []; S.loaded = false; S.viewing = null; S.isAdmin = false; S.chefs = null; $("adminBtn").hidden = true;
       showAuth("login");
     }
   });
