@@ -328,3 +328,15 @@ body.readonly [data-act="share"], body.readonly [data-act="team"] { display: non
 .notif small { color: var(--muted); font-size: .78rem; }
 .chef-main small.online { color: var(--accent); font-weight: 600; }
 .auth-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+
+/* Plating */
+.plating { border-top: 1px solid var(--line); padding: 18px 22px 22px; }
+.plating-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 6fr); gap: 18px; align-items: start; }
+.plating-grid > :only-child { grid-column: 1 / -1; }
+.plating-photo { border-radius: 10px; overflow: hidden; background: var(--sunk); aspect-ratio: 1 / 1; max-width: 100%; }
+.plating-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.plating-text { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.plate-line { margin: 0; display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; width: fit-content; max-width: 100%; }
+.plate-line small { font-size: .68rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.plating-field { display: flex; flex-direction: column; gap: 12px; }
+@media (max-width: 780px) { .plating-grid { grid-template-columns: minmax(0, 1fr); } .plating { padding: 16px; } }

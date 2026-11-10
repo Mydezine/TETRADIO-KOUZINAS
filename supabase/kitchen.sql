@@ -173,3 +173,34 @@ begin
       using (bucket_id = 'recipe-photos' and (select public.photo_is_readable(name)));
   end if;
 end $$;
+
+-- ---------- Στήσιμο πιάτου ----------
+alter table public.recipes add column if not exists plate text not null default '';
+alter table public.recipes add column if not exists plating_steps jsonb not null default '[]'::jsonb;
+alter table public.recipes add column if not exists plating_photo_path text;
+
+create or replace function public.get_shared_recipe(tok text)
+returns json language sql stable security definer set search_path = ''
+as $$
+  select json_build_object(
+    'title', r.title, 'category', r.category, 'yield_qty', r.yield_qty, 'yield_unit', r.yield_unit,
+    'prep_min', r.prep_min, 'cook_min', r.cook_min, 'ingredients', r.ingredients, 'steps', r.steps,
+    'allergens', r.allergens, 'notes', r.notes, 'photo_path', r.photo_path,
+    'plate', r.plate, 'plating_steps', r.plating_steps, 'plating_photo_path', r.plating_photo_path,
+    'chef_name', coalesce(p.full_name, ''), 'restaurant', coalesce(rs.name, ''))
+  from public.recipes r
+  left join public.profiles p on p.user_id = r.user_id
+  left join public.restaurants rs on rs.id = r.restaurant_id
+  where tok is not null and length(tok) >= 16 and r.share_token = tok
+$$;
+
+create or replace function public.photo_is_readable(obj text)
+returns boolean language sql stable security definer set search_path = ''
+as $$
+  select exists (
+    select 1 from public.recipes r
+    where (
+        (r.photo_path is not null and (r.photo_path = obj or regexp_replace(r.photo_path, '\.jpg$', '_t.jpg') = obj))
+        or (r.plating_photo_path is not null and r.plating_photo_path = obj))
+      and (r.share_token is not null or (r.restaurant_id is not null and public.team_can_read_restaurant(r.restaurant_id))))
+$$;

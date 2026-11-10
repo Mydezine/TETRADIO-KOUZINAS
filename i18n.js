@@ -305,6 +305,16 @@ window.I18N_EN = {
     "Σοτάρουμε το κρεμμύδι σε βούτυρο…": "Sauté the onion in butter…",
     "Μουσακάς\nΥλικά\n1,5 kg μελιτζάνες\n…\nΕκτέλεση\n…": "Moussaka\nIngredients\n1.5 kg aubergines\n…\nMethod\n…",
 
+    // plating
+    "Στήσιμο πιάτου": "Plating",
+    "Πιάτο σερβιρίσματος": "Serving plate",
+    "π.χ. Βαθύ λευκό πιάτο 28 εκ.": "e.g. White deep plate, 28 cm",
+    "Βήματα στησίματος": "Plating steps",
+    "Ένα βήμα ανά γραμμή, με τη σειρά που μπαίνουν στο πιάτο.": "One step per line, in the order things go on the plate.",
+    "Η σάλτσα στο κέντρο με κουτάλι\nΤο ψάρι από πάνω, με την πέτσα προς τα πάνω\nΜικροχόρταρα και λίγες σταγόνες λάδι": "Sauce in the centre with a spoon\nFish on top, skin side up\nMicrogreens and a few drops of oil",
+    "+ Φωτογραφία στησίματος": "+ Plating photo",
+    "Στημένο πιάτο": "Plated dish",
+
     // notifications
     "Δεν έχεις ειδοποιήσεις ακόμα.": "No notifications yet.",
     "Οι ειδοποιήσεις ενεργοποιήθηκαν": "Phone notifications on",

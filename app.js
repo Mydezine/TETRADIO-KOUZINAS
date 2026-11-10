@@ -80,12 +80,14 @@
     id: r.id, restaurantId: r.restaurant_id || "", title: r.title, category: r.category,
     yieldQty: r.yield_qty != null ? Number(r.yield_qty) : null, yieldUnit: r.yield_unit, prepMin: r.prep_min, cookMin: r.cook_min,
     ingredients: r.ingredients || [], steps: r.steps || [], allergens: r.allergens || [], notes: r.notes || "", createdAt: r.created_at,
+    plate: r.plate || "", platingSteps: r.plating_steps || [], platingPhotoPath: r.plating_photo_path || null,
     photoPath: r.photo_path || null, sellPrice: r.sell_price != null ? Number(r.sell_price) : null, shareToken: r.share_token || null,
   });
   const toRec = (d) => ({
     restaurant_id: d.restaurantId || null, title: d.title, category: d.category || "Άλλο",
     yield_qty: d.yieldQty ?? null, yield_unit: d.yieldUnit || "", prep_min: d.prepMin != null ? Math.round(d.prepMin) : null, cook_min: d.cookMin != null ? Math.round(d.cookMin) : null,
     ingredients: d.ingredients || [], steps: d.steps || [], allergens: d.allergens || [], notes: d.notes || "", updated_at: new Date().toISOString(),
+    plate: d.plate || "", plating_steps: d.platingSteps || [],
   });
 
   async function loadAll() {
@@ -201,6 +203,22 @@
     $("cat").addEventListener("change", (e) => { S.cat = e.target.value; renderList(); });
   }
 
+  // "Στήσιμο πιάτου": serving plate, plating steps and a reference photo.
+  function platingHtml(r, photoHtml) {
+    const steps = r.platingSteps || [];
+    if (!r.plate && !steps.length && !photoHtml) return "";
+    return `<section class="plating">
+      <div class="sec-title"><span>Στήσιμο πιάτου</span></div>
+      <div class="plating-grid">
+        ${photoHtml ? `<div class="plating-photo">${photoHtml}</div>` : ""}
+        <div class="plating-text">
+          ${r.plate ? `<p class="plate-line"><small>Πιάτο σερβιρίσματος</small><b>${esc(r.plate)}</b></p>` : ""}
+          ${steps.length ? `<ol class="steps">${steps.map((x) => `<li><span>${esc(x)}</span></li>`).join("")}</ol>` : ""}
+        </div>
+      </div>
+    </section>`;
+  }
+
   function renderDetail() {
     const r = S.recipes.find((x) => x.id === S.id);
     if (!r) { S.view = "list"; return render(); }
@@ -247,6 +265,7 @@
           ${r.notes ? `<div class="ticket"><strong>Σημειώσεις σεφ</strong>${esc(r.notes)}</div>` : ""}
         </section>
       </div>
+      ${platingHtml(r, r.platingPhotoPath ? photoImg(r.platingPhotoPath) : "")}
       ${S.viewing && S.viewing.team ? "" : `<section class="costing" id="costBox">${costingHtml(r, factor, target)}</section>`}
     </article>`;
     const sc = $("scale");
@@ -280,6 +299,12 @@
       <fieldset><legend>Αλλεργιογόνα</legend><div class="checks">${ALLERGENS.map((a, i) => `<label><input type="checkbox" id="al-${i}" value="${esc(a)}" ${(e.allergens || []).includes(a) ? "checked" : ""}> ${esc(a)}</label>`).join("")}</div></fieldset>
       <label class="f">Σημειώσεις σεφ <span class="hint">Μυστικά, πλέιτινγκ, συντήρηση, προμηθευτές.</span>
         <textarea id="f-notes" rows="3">${esc(e.notes)}</textarea></label>
+      <fieldset class="plating-field"><legend>Στήσιμο πιάτου</legend>
+        <div class="photo-box" id="platingBox"></div>
+        <label class="f">Πιάτο σερβιρίσματος<input id="f-plate" value="${esc(e.plate)}" placeholder="π.χ. Βαθύ λευκό πιάτο 28 εκ."></label>
+        <label class="f">Βήματα στησίματος <span class="hint">Ένα βήμα ανά γραμμή, με τη σειρά που μπαίνουν στο πιάτο.</span>
+          <textarea id="f-plating" rows="4" placeholder="Η σάλτσα στο κέντρο με κουτάλι&#10;Το ψάρι από πάνω, με την πέτσα προς τα πάνω&#10;Μικροχόρταρα και λίγες σταγόνες λάδι">${esc((e.platingSteps || []).join("\n"))}</textarea></label>
+      </fieldset>
       <div id="f-err" class="err" hidden></div>
       <div class="form-actions">
         <button type="button" class="btn" data-act="cancel-form">Ακύρωση</button>
@@ -287,7 +312,7 @@
       </div>
     </form>`;
     $("recForm").addEventListener("submit", saveRecipe);
-    renderPhotoBox();
+    renderPhotoBox(); renderPlatingBox();
     if (!e.title) $("f-title").focus();
   }
 
@@ -323,6 +348,8 @@
       steps: $("f-steps").value.split("\n").map((s) => s.trim()).filter(Boolean),
       allergens: ALLERGENS.filter((_, i) => $("al-" + i).checked),
       notes: $("f-notes").value.trim(),
+      plate: $("f-plate").value.trim(),
+      platingSteps: $("f-plating").value.split("\n").map((x) => x.trim()).filter(Boolean),
     };
     const btn = $("f-save"); btn.disabled = true; btn.textContent = "Αποθήκευση…";
     try {
@@ -415,12 +442,13 @@
       case "back": S.view = "list"; render(); break;
       case "reset-scale": S.scale = null; renderDetail(); break;
       case "edit": S.edit = { ...r }; S.view = "form"; render(); break;
-      case "dup": S.edit = { ...r, id: undefined, photoPath: null, title: r.title + " (αντίγραφο)" }; S.view = "form"; render(); break;
-      case "cancel-form": if (S.edit && S.edit.newPhoto) URL.revokeObjectURL(S.edit.newPhoto.preview); S.view = S.edit && S.edit.id ? "detail" : "list"; S.edit = null; render(); break;
+      case "dup": S.edit = { ...r, id: undefined, photoPath: null, platingPhotoPath: null, shareToken: null, title: r.title + " (αντίγραφο)" }; S.view = "form"; render(); break;
+      case "cancel-form": if (S.edit && S.edit.newPhoto) URL.revokeObjectURL(S.edit.newPhoto.preview); if (S.edit && S.edit.newPlating) URL.revokeObjectURL(S.edit.newPlating.preview); S.view = S.edit && S.edit.id ? "detail" : "list"; S.edit = null; render(); break;
       case "del":
         confirmBox("Διαγραφή συνταγής;", `Η συνταγή «${r.title}» θα σβηστεί οριστικά.`, "Διαγραφή", async () => {
           check(await sb.from("recipes").delete().eq("id", r.id));
           removePhotoFiles(r.photoPath);
+          if (r.platingPhotoPath) sb.storage.from(BUCKET).remove([r.platingPhotoPath]).catch(() => {});
           S.recipes = S.recipes.filter((x) => x.id !== r.id); S.view = "list"; render(); toast("Η συνταγή διαγράφηκε");
         }); break;
       case "edit-rest": restaurantForm(rest); break;
@@ -452,7 +480,7 @@
   async function signPhotos(extra) {
     const now = Date.now();
     const paths = (extra || []).filter(Boolean);
-    S.recipes.forEach((r) => { if (r.photoPath) paths.push(r.photoPath, thumbOf(r.photoPath)); });
+    S.recipes.forEach((r) => { if (r.photoPath) paths.push(r.photoPath, thumbOf(r.photoPath)); if (r.platingPhotoPath) paths.push(r.platingPhotoPath); });
     if (S.profile && S.profile.avatar_path) paths.push(S.profile.avatar_path);
     (S.chefs || []).forEach((c) => { if (c.avatar_path) paths.push(c.avatar_path); });
     const need = paths.filter((p) => !photoUrls[p] || now - photoUrls[p].at > 50 * 60 * 1000);
@@ -529,6 +557,57 @@
 
   // After the recipe row is saved: upload a new photo or remove the old one.
   async function applyPhotoChange(rec, edit) {
+    return applyPlatingPhoto(await applyMainPhoto(rec, edit), edit);
+  }
+  async function applyPlatingPhoto(rec, edit) {
+    const old = edit && edit.id ? edit.platingPhotoPath : null;
+    if (edit && edit.newPlating) {
+      const path = `${S.user.id}/${rec.id}/plating-${Date.now()}.jpg`;
+      check(await sb.storage.from(BUCKET).upload(path, edit.newPlating.large, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false }));
+      photoUrls[path] = { url: edit.newPlating.preview, at: Date.now() };
+      check(await sb.from("recipes").update({ plating_photo_path: path }).eq("id", rec.id));
+      if (old) sb.storage.from(BUCKET).remove([old]).catch(() => {});
+      setTimeout(signPhotos, 1500);
+      return { ...rec, platingPhotoPath: path };
+    }
+    if (edit && edit.removePlating && old) {
+      check(await sb.from("recipes").update({ plating_photo_path: null }).eq("id", rec.id));
+      sb.storage.from(BUCKET).remove([old]).catch(() => {});
+      return { ...rec, platingPhotoPath: null };
+    }
+    return rec;
+  }
+  function renderPlatingBox() {
+    const box = $("platingBox"); if (!box) return;
+    const e = S.edit || {};
+    const has = e.newPlating || (!e.removePlating && e.platingPhotoPath);
+    const src = e.newPlating ? e.newPlating.preview : (has && photoUrls[e.platingPhotoPath] ? photoUrls[e.platingPhotoPath].url : null);
+    box.innerHTML = `
+      <div class="photo-preview ${has ? "" : "empty"}">${has ? (src ? `<img src="${esc(src)}" alt="Στημένο πιάτο">` : `<span>Φόρτωση φωτογραφίας…</span>`) : `<span>Χωρίς φωτογραφία</span>`}</div>
+      <div class="photo-actions">
+        <label class="btn" for="platingInput">${has ? "Αλλαγή φωτογραφίας" : "+ Φωτογραφία στησίματος"}</label>
+        ${has ? `<button type="button" class="btn ghost" id="platingRemove">Αφαίρεση</button>` : ""}
+        <input type="file" id="platingInput" accept="image/*" hidden>
+        <span class="hint" id="platingMsg"></span>
+      </div>`;
+    $("platingInput").addEventListener("change", async (ev) => {
+      const file = ev.target.files[0]; ev.target.value = "";
+      if (!file) return;
+      $("platingMsg").textContent = "Επεξεργασία φωτογραφίας…";
+      try {
+        const large = await resizeImage(file, 1600, 0.85);
+        if (e.newPlating) URL.revokeObjectURL(e.newPlating.preview);
+        e.newPlating = { large, preview: URL.createObjectURL(large) }; e.removePlating = false;
+        renderPlatingBox();
+      } catch { $("platingMsg").textContent = "Δεν άνοιξε η φωτογραφία. Δοκίμασε JPG ή PNG."; }
+    });
+    const rm = $("platingRemove");
+    if (rm) rm.addEventListener("click", () => {
+      if (e.newPlating) { URL.revokeObjectURL(e.newPlating.preview); e.newPlating = null; } else e.removePlating = true;
+      renderPlatingBox();
+    });
+  }
+  async function applyMainPhoto(rec, edit) {
     const old = edit && edit.id ? edit.photoPath : null;
     if (edit && edit.newPhoto) {
       const path = `${S.user.id}/${rec.id}/${Date.now()}.jpg`;
@@ -576,6 +655,8 @@
     const ING = "υλικά|υλικα|συστατικά|συστατικα|ingredients";
     const STEP = "εκτέλεση|εκτελεση|οδηγίες|οδηγιες|τρόπος|τροπος|παρασκευή|παρασκευη|διαδικασία|διαδικασια|method|directions|instructions|preparation|steps";
     const NOTE = "σημειώσεις|σημειωσεις|σημείωση|σημειωση|tips|notes|μυστικά|μυστικα";
+    const PLATE = "στήσιμο|στησιμο|πλέιτινγκ|πλειτινγκ|σερβίρισμα|σερβιρισμα|plating|presentation";
+    const plating = [];
     let title = "", section = "", ings = [], steps = [], notes = [], yieldQty = null, yieldUnit = "μερίδες";
     for (const raw of lines) {
       if (!raw) continue;
@@ -585,16 +666,18 @@
       if (head(l, ING)) { section = "ing"; continue; }
       if (head(l, STEP)) { section = "step"; continue; }
       if (head(l, NOTE)) { section = "note"; continue; }
+      if (head(l, PLATE)) { section = "plate"; continue; }
       if (!title && !section) { title = l.replace(/[*#_]/g, "").trim(); continue; }
       if (section === "ing") ings.push(l);
       else if (section === "step") steps.push(l.replace(/^(\d+|[α-ω])[.)]\s*/i, ""));
       else if (section === "note") notes.push(l);
+      else if (section === "plate") plating.push(l.replace(/^(\d+|[α-ω])[.)]\s*/i, ""));
       else if (/^\d/.test(l) && l.length < 60) ings.push(l);
       else steps.push(l.replace(/^(\d+)[.)]\s*/, ""));
     }
     if (!title && !ings.length && !steps.length) return [];
     return [{ title: title || "Συνταγή χωρίς όνομα", category: "Άλλο", yieldQty, yieldUnit: yieldQty ? yieldUnit : "μερίδες", prepMin: null, cookMin: null,
-      ingredients: parseIngredients(ings.join("\n")), steps, allergens: [], notes: notes.join("\n") }];
+      ingredients: parseIngredients(ings.join("\n")), steps, allergens: [], notes: notes.join("\n"), plate: "", platingSteps: plating }];
   }
 
   const fromAi = (r) => ({
@@ -950,6 +1033,8 @@
     const r = fromRec({ ...data, id: "shared" });
     let photoUrl = null;
     if (r.photoPath) { const s = await sb.storage.from(BUCKET).createSignedUrl(r.photoPath, 3600); photoUrl = s.data && s.data.signedUrl; }
+    let platingUrl = null;
+    if (r.platingPhotoPath) { const s = await sb.storage.from(BUCKET).createSignedUrl(r.platingPhotoPath, 3600); platingUrl = s.data && s.data.signedUrl; }
     let target = r.yieldQty || 0;
     const paint = () => {
       const factor = r.yieldQty && target ? target / r.yieldQty : 1;
@@ -974,7 +1059,8 @@
           <section><div class="sec-title"><span>Εκτέλεση</span></div>
             ${r.steps.length ? `<ol class="steps">${r.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join("")}</ol>` : ""}
             ${r.notes ? `<div class="ticket"><strong>Σημειώσεις σεφ</strong>${esc(r.notes)}</div>` : ""}</section>
-        </div></article>
+        </div>
+        ${platingHtml(r, platingUrl ? `<img src="${esc(platingUrl)}" alt="">` : "")}</article>
         <div class="share-cta">Θέλεις κι εσύ να κρατάς τις συνταγές σου οργανωμένες; <a class="btn primary" href="${esc(appUrl())}">Φτιάξε το δικό σου Τετράδιο Κουζίνας</a></div>`;
       const sc = $("scale");
       if (sc) sc.addEventListener("change", () => { const v = parseFloat(sc.value.replace(",", ".")); target = v > 0 ? v : r.yieldQty; paint(); });
