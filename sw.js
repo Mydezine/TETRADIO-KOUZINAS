@@ -1,6 +1,6 @@
 // Keeps the app shell available offline. Recipes themselves always come from Supabase.
-const CACHE = "tetradio-v8";
-const SHELL = ["./", "index.html", "styles.css?v=8", "app.js?v=8", "config.js?v=8", "manifest.webmanifest", "icons/icon-192.png", "icons/apple-touch-icon.png",
+const CACHE = "tetradio-v9";
+const SHELL = ["./", "index.html", "styles.css?v=9", "app.js?v=9", "config.js?v=9", "manifest.webmanifest", "icons/icon-192.png", "icons/apple-touch-icon.png",
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"];
 
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
@@ -19,4 +19,21 @@ self.addEventListener("fetch", (e) => {
       return res;
     }).catch(() => caches.match(e.request).then((r) => r || caches.match("index.html")))
   );
+});
+
+// Phone notifications
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { title: "Τετράδιο Κουζίνας", body: e.data ? e.data.text() : "" }; }
+  e.waitUntil(self.registration.showNotification(d.title || "Τετράδιο Κουζίνας", {
+    body: d.body || "", icon: "icons/icon-192.png", badge: "icons/icon-192.png", data: { url: d.url || "./" }, tag: d.kind || "general",
+  }));
+});
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "./";
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    for (const c of list) { if ("focus" in c) return c.focus(); }
+    return self.clients.openWindow(url);
+  }));
 });

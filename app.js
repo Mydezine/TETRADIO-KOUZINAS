@@ -5,12 +5,13 @@
   const ALLERGENS = ["Γλουτένη", "Καρκινοειδή", "Αυγά", "Ψάρια", "Αράπικα φιστίκια", "Σόγια", "Γάλα", "Ξηροί καρποί", "Σέλινο", "Μουστάρδα", "Σουσάμι", "Θειώδη", "Λούπινο", "Μαλάκια"];
   const UNITS = ["g", "gr", "γρ", "γρ.", "kg", "κιλό", "κιλά", "mg", "ml", "l", "lt", "λτ", "cl", "dl", "τεμ", "τεμ.", "τεμάχια", "κ.σ.", "κσ", "κ.γ.", "κγ", "φλ.", "φλιτζάνι", "φλιτζάνια", "πρέζα", "ματσάκι", "ματσάκια", "σκελίδα", "σκελίδες", "φύλλα", "κλωνάρια", "κλωνάρι", "φέτες", "φέτα", "oz", "lb", "tbsp", "tsp", "cup", "pcs"];
 
-  const S = { restaurants: [], recipes: [], sel: "all", q: "", cat: "", view: "list", id: null, scale: null, edit: null, loaded: false, user: null, isAdmin: false, viewing: null, chefs: null, profile: null, prices: {}, teams: [], order: null, orderQ: "", units: "orig" };
+  const S = { restaurants: [], recipes: [], sel: "all", q: "", cat: "", view: "list", id: null, scale: null, edit: null, loaded: false, user: null, isAdmin: false, viewing: null, chefs: null, profile: null, prices: {}, teams: [], order: null, orderQ: "", units: "orig", notifs: [], activity: {} };
   try { if (localStorage.getItem("units") === "metric") S.units = "metric"; } catch { /* ignore */ }
+  let LANG = "el", LOCALE = "el-GR";
   const $ = (id) => document.getElementById(id);
   const main = $("main");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const nf = (n, d) => Number(n).toLocaleString("el-GR", { maximumFractionDigits: d });
+  const nf = (n, d) => Number(n).toLocaleString(LOCALE, { maximumFractionDigits: d });
 
   function toast(msg) { const t = $("toast"); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2600); }
   function notice(msg) { const n = $("notice"); n.textContent = msg || ""; n.hidden = !msg; }
@@ -1111,6 +1112,127 @@
     }));
   }
 
+  // ---------- notifications: bell, phone push, chef activity ----------
+  function relTime(d) {
+    if (!d) return LANG === "en" ? "never" : "ποτέ";
+    const s = Math.max(0, (Date.now() - new Date(d).getTime()) / 1000);
+    const en = LANG === "en";
+    if (s < 60) return en ? "just now" : "μόλις τώρα";
+    if (s < 3600) { const m = Math.round(s / 60); return en ? `${m} min ago` : `πριν ${m}′`; }
+    if (s < 86400) { const h = Math.round(s / 3600); return en ? `${h} h ago` : `πριν ${h} ${h === 1 ? "ώρα" : "ώρες"}`; }
+    const dd = Math.round(s / 86400);
+    if (dd < 30) return en ? `${dd} d ago` : `πριν ${dd} ${dd === 1 ? "μέρα" : "μέρες"}`;
+    return new Date(d).toLocaleDateString(LOCALE, { day: "numeric", month: "short", year: "numeric" });
+  }
+  function notifText(n) {
+    const p = n.params || {}, en = LANG === "en";
+    switch (n.kind) {
+      case "team_join": return en ? { title: "New team member", body: `${p.name} joined the team “${p.team}”.` } : { title: "Νέο μέλος στην ομάδα", body: `${p.name} μπήκε στην ομάδα «${p.team}».` };
+      case "team_recipe": return en ? { title: `New recipe · ${p.team}`, body: p.title } : { title: `Νέα συνταγή · ${p.team}`, body: p.title };
+      case "new_chef": return en ? { title: "New chef", body: `${p.email} signed up.` } : { title: "Νέος μάγειρας", body: `${p.email} γράφτηκε στην εφαρμογή.` };
+      case "chef_active": return en ? { title: "Chef online", body: `${p.name} just opened the app.` } : { title: "Μάγειρας online", body: `${p.name} άνοιξε τώρα την εφαρμογή.` };
+      default: return { title: n.kind, body: "" };
+    }
+  }
+  function renderBell() {
+    const unread = S.notifs.filter((n) => !n.read_at).length;
+    const b = $("bellBadge");
+    b.hidden = !unread; b.textContent = unread > 9 ? "9+" : String(unread);
+  }
+  let notifChannel = null;
+  async function loadNotifs() {
+    const { data, error } = await sb.from("notifications").select("*").eq("user_id", S.user.id).order("created_at", { ascending: false }).limit(50);
+    S.notifs = error ? [] : (data || []);
+    renderBell();
+    if (notifChannel) sb.removeChannel(notifChannel);
+    notifChannel = sb.channel("notif-" + S.user.id)
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications", filter: `user_id=eq.${S.user.id}` }, (payload) => {
+        if (!payload.new || S.notifs.some((n) => n.id === payload.new.id)) return;
+        S.notifs.unshift(payload.new); renderBell();
+        const t = notifText(payload.new); toast(`${t.title}: ${t.body}`);
+        if (payload.new.kind === "team_recipe" || payload.new.kind === "team_join") loadTeams();
+      }).subscribe();
+  }
+
+  // Phone notifications (Web Push)
+  const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isStandalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  function b64ToBytes(s) { const p = "=".repeat((4 - (s.length % 4)) % 4); const raw = atob((s + p).replace(/-/g, "+").replace(/_/g, "/")); return Uint8Array.from(raw, (c) => c.charCodeAt(0)); }
+  async function pushState() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)) return isIos() && !isStandalone() ? "ios-install" : "unsupported";
+    if (Notification.permission === "denied") return "denied";
+    try { const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); return sub ? "on" : "off"; } catch { return "off"; }
+  }
+  async function enablePush() {
+    const perm = await Notification.requestPermission();
+    if (perm !== "granted") throw new Error(LANG === "en" ? "Notifications were not allowed." : "Δεν δόθηκε άδεια για ειδοποιήσεις.");
+    const { data: key, error } = await sb.rpc("vapid_public_key");
+    if (error || !key) throw new Error(LANG === "en" ? "Notifications are not available right now." : "Οι ειδοποιήσεις δεν είναι διαθέσιμες αυτή τη στιγμή.");
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+    const j = sub.toJSON();
+    check(await sb.from("push_subscriptions").upsert({ endpoint: j.endpoint, user_id: S.user.id, p256dh: j.keys.p256dh, auth: j.keys.auth, lang: LANG }));
+  }
+  async function disablePush() {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (sub) { await sb.from("push_subscriptions").delete().eq("endpoint", sub.endpoint); await sub.unsubscribe(); }
+  }
+  async function syncPushLang() {
+    try { const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); if (sub) await sb.from("push_subscriptions").update({ lang: LANG }).eq("endpoint", sub.endpoint); } catch { /* ignore */ }
+  }
+
+  async function notifDialog() {
+    toggleMenu(false);
+    const state = await pushState();
+    const en = LANG === "en";
+    const pushHtml = {
+      on: `<span>${en ? "Phone notifications are <b>on</b> on this device." : "Οι ειδοποιήσεις στο κινητό είναι <b>ενεργές</b> σε αυτή τη συσκευή."}</span><button class="btn ghost" id="pushOff">${en ? "Turn off" : "Απενεργοποίηση"}</button>`,
+      off: `<span>${en ? "Get notifications on this device even when the app is closed." : "Λάβε ειδοποιήσεις σε αυτή τη συσκευή, ακόμα κι όταν η εφαρμογή είναι κλειστή."}</span><button class="btn primary" id="pushOn">${en ? "Turn on" : "Ενεργοποίηση"}</button>`,
+      denied: `<span>${en ? "Notifications are blocked for this site. Allow them in your browser or phone settings." : "Οι ειδοποιήσεις είναι μπλοκαρισμένες. Επίτρεψέ τες από τις ρυθμίσεις του browser ή του κινητού."}</span>`,
+      "ios-install": `<span>${en ? "On iPhone, first add the app to your Home Screen (Share → Add to Home Screen), open it from there, and turn notifications on." : "Στο iPhone, πρώτα πρόσθεσε την εφαρμογή στην αρχική οθόνη (Κοινή χρήση → Προσθήκη στην οθόνη αφετηρίας), άνοιξέ την από εκεί και ενεργοποίησε τις ειδοποιήσεις."}</span>`,
+      unsupported: `<span>${en ? "This browser doesn't support phone notifications." : "Αυτός ο browser δεν υποστηρίζει ειδοποιήσεις στο κινητό."}</span>`,
+    }[state];
+    const items = S.notifs.map((n) => {
+      const t = notifText(n);
+      return `<button class="notif ${n.read_at ? "" : "unread"}" data-notif="${esc(n.id)}"><b>${esc(t.title)}</b><span>${esc(t.body)}</span><small>${esc(relTime(n.created_at))}</small></button>`;
+    }).join("");
+    modal(`<h3>${en ? "Notifications" : "Ειδοποιήσεις"}</h3>
+      <div class="push-box">${pushHtml}</div>
+      <div id="pushErr" class="err" hidden></div>
+      <div class="notif-list">${items || `<p class="hint">${en ? "No notifications yet." : "Δεν έχεις ειδοποιήσεις ακόμα."}</p>`}</div>
+      <div class="form-actions"><button class="btn" data-act="close">${en ? "Close" : "Κλείσιμο"}</button></div>`, (o) => {
+      const fail = (e) => { const er = $("pushErr"); er.textContent = (e && e.message) || (en ? "Something went wrong." : "Κάτι δεν πήγε καλά."); er.hidden = false; };
+      if ($("pushOn")) $("pushOn").addEventListener("click", async () => { $("pushOn").disabled = true; try { await enablePush(); toast(en ? "Phone notifications on" : "Οι ειδοποιήσεις ενεργοποιήθηκαν"); closeModal(); notifDialog(); } catch (e) { $("pushOn").disabled = false; fail(e); } });
+      if ($("pushOff")) $("pushOff").addEventListener("click", async () => { try { await disablePush(); closeModal(); notifDialog(); } catch (e) { fail(e); } });
+      o.querySelectorAll("[data-notif]").forEach((b) => b.addEventListener("click", () => {
+        const n = S.notifs.find((x) => x.id === b.dataset.notif); if (!n) return;
+        closeModal();
+        const p = n.params || {};
+        if (n.kind === "team_recipe" && p.team_id) openTeam(p.team_id);
+        else if (n.kind === "team_join" && p.restaurant_id) { S.viewing = null; S.view = "list"; S.sel = p.restaurant_id; S.loaded = false; render(); loadAll(); }
+        else if ((n.kind === "new_chef" || n.kind === "chef_active") && S.isAdmin) openAdmin();
+      }));
+    });
+    // Mark everything as read once the list has been shown.
+    if (S.notifs.some((n) => !n.read_at)) {
+      const now = new Date().toISOString();
+      S.notifs.forEach((n) => { if (!n.read_at) n.read_at = now; });
+      renderBell();
+      sb.from("notifications").update({ read_at: now }).eq("user_id", S.user.id).is("read_at", null).then(() => {});
+    }
+  }
+
+  // Tells the server this chef is using the app (every few minutes while it's open).
+  let activityTimer = null;
+  function startActivity() {
+    const ping = () => { if (S.user && document.visibilityState === "visible") sb.rpc("touch_activity").then(() => {}); };
+    ping();
+    clearInterval(activityTimer);
+    activityTimer = setInterval(ping, 4 * 60 * 1000);
+  }
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && S.user) sb.rpc("touch_activity").then(() => {}); });
+
   // ---------- menu: backup, import, install, logout ----------
   function toggleMenu(open) { $("menu").hidden = !open; $("menuBtn").setAttribute("aria-expanded", String(open)); }
   $("menuBtn").addEventListener("click", () => toggleMenu($("menu").hidden));
@@ -1156,7 +1278,8 @@
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installPrompt = e; $("installBtn").hidden = false; });
   $("installBtn").addEventListener("click", async () => { toggleMenu(false); if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; $("installBtn").hidden = true; });
 
-  $("logoutBtn").addEventListener("click", async () => { toggleMenu(false); await sb.auth.signOut(); });
+  $("logoutBtn").addEventListener("click", async () => { toggleMenu(false); clearInterval(activityTimer); if (notifChannel) { sb.removeChannel(notifChannel); notifChannel = null; } await sb.auth.signOut(); });
+  $("bellBtn").addEventListener("click", notifDialog);
   $("profileBtn").addEventListener("click", () => profileDialog(false));
   $("pricesBtn").addEventListener("click", pricesDialog);
   $("joinBtn").addEventListener("click", () => joinDialog(""));
@@ -1225,7 +1348,7 @@
   function showApp() {
     $("authView").hidden = true; $("appView").hidden = false;
     $("whoEmail").textContent = (S.user && S.user.email) || "";
-    renderMenuButton(); render(); loadAll(); checkAdmin(); loadProfile(); loadTeams();
+    renderMenuButton(); render(); loadAll(); checkAdmin(); loadProfile(); loadTeams(); loadNotifs(); startActivity();
     let pending = null; try { pending = localStorage.getItem("pendingJoin"); localStorage.removeItem("pendingJoin"); } catch { /* ignore */ }
     if (pending) setTimeout(() => joinDialog(pending), 600);
   }
@@ -1358,12 +1481,19 @@
   }
   async function openAdmin() {
     S.viewing = null; S.view = "admin"; S.chefs = null; render(); window.scrollTo(0, 0);
-    const { data, error } = await sb.rpc("admin_chef_list");
+    const [{ data, error }, act] = await Promise.all([sb.rpc("admin_chef_list"), sb.rpc("admin_activity")]);
     if (error) { S.chefs = []; notice("Δεν φόρτωσε η λίστα μαγείρων. Ανανέωσε τη σελίδα."); }
     else S.chefs = data || [];
+    S.activity = {}; ((act && act.data) || []).forEach((a) => { S.activity[a.user_id] = a.last_seen_at; });
     if (S.view === "admin") renderAdmin();
     signPhotos();
   }
+  const isOnline = (d) => !!d && Date.now() - new Date(d).getTime() < 6 * 60 * 1000;
+  setInterval(async () => {
+    if (S.view !== "admin" || !S.isAdmin || document.visibilityState !== "visible") return;
+    const act = await sb.rpc("admin_activity");
+    if (!act.error) { S.activity = {}; (act.data || []).forEach((a) => { S.activity[a.user_id] = a.last_seen_at; }); if (S.view === "admin") renderAdmin(); }
+  }, 60 * 1000);
   function openChef(id) {
     const chef = (S.chefs || []).find((c) => c.id === id);
     if (!chef) return;
@@ -1373,7 +1503,7 @@
     render(); loadAll(); window.scrollTo(0, 0);
   }
   function renderAdmin() {
-    const fmtDate = (d) => d ? new Date(d).toLocaleDateString("el-GR", { day: "numeric", month: "short", year: "numeric" }) : "—";
+    const fmtDate = (d) => d ? new Date(d).toLocaleDateString(LOCALE, { day: "numeric", month: "short", year: "numeric" }) : "—";
     const head = `<div class="rest-head"><div><h2>Διαχείριση</h2><p>Όλοι οι μάγειρες της εφαρμογής. Πάτα έναν για να δεις τις συνταγές του.</p></div>
       <div class="sheet-actions"><button class="btn" data-act="my-notebook">Οι δικές μου συνταγές</button></div></div>`;
     if (!S.chefs) { main.innerHTML = head + `<div class="empty"><h3>Φόρτωση μαγείρων…</h3></div>`; return; }
@@ -1381,12 +1511,14 @@
     const stats = `<div class="facts admin-stats">
       <div class="fact"><small>Μάγειρες</small><b>${S.chefs.length}</b></div>
       <div class="fact"><small>Συνταγές</small><b>${tot.r}</b></div>
-      <div class="fact"><small>Εστιατόρια</small><b>${tot.e}</b></div></div>`;
+      <div class="fact"><small>Εστιατόρια</small><b>${tot.e}</b></div>
+      <div class="fact"><small>Online τώρα</small><b>${S.chefs.filter((c) => isOnline(S.activity[c.id])).length}</b></div></div>`;
     const rows = S.chefs.map((c) => `<button class="chef" data-chef="${esc(c.id)}">
         ${avatarHtml(c.avatar_path, c.full_name || c.email, "avatar")}
         <span class="chef-main"><b>${esc(c.full_name || c.email)}</b>${c.id === S.user.id ? ' <span class="example">ΕΣΥ</span>' : ""}
           ${c.full_name ? `<small>${esc(c.email)}</small>` : ""}
-          <small>Μέλος από ${esc(fmtDate(c.created_at))} · τελευταία σύνδεση ${esc(fmtDate(c.last_sign_in_at))}</small></span>
+          <small class="${isOnline(S.activity[c.id]) ? "online" : ""}">${isOnline(S.activity[c.id]) ? "● Online τώρα" : "Ενεργός " + esc(relTime(S.activity[c.id] || c.last_sign_in_at))}</small>
+          <small>Μέλος από ${esc(fmtDate(c.created_at))}</small></span>
         <span class="chef-num"><b>${Number(c.recipes)}</b><small>συνταγές</small></span>
         <span class="chef-num"><b>${Number(c.restaurants)}</b><small>εστιατόρια</small></span>
       </button>`).join("");
@@ -1406,7 +1538,7 @@
     if (event === "PASSWORD_RECOVERY") { S.user = session && session.user; showAuth("reset"); return; }
     const uid = session && session.user && session.user.id;
     if (uid && (!S.user || S.user.id !== uid)) {
-      S.user = session.user; S.restaurants = []; S.recipes = []; S.loaded = false; S.view = "list"; S.sel = "all"; S.viewing = null; S.isAdmin = false; S.chefs = null; S.profile = null; profilePrompted = false; S.teams = []; S.order = null; S.prices = {}; $("adminBtn").hidden = true;
+      S.user = session.user; S.restaurants = []; S.recipes = []; S.loaded = false; S.view = "list"; S.sel = "all"; S.viewing = null; S.isAdmin = false; S.chefs = null; S.profile = null; profilePrompted = false; S.teams = []; S.order = null; S.prices = {}; S.notifs = []; $("adminBtn").hidden = true;
       if (authMode !== "reset" || $("authView").hidden) setTimeout(showApp, 0);
     } else if (!uid) {
       S.user = null; S.restaurants = []; S.recipes = []; S.loaded = false; S.viewing = null; S.isAdmin = false; S.chefs = null; S.profile = null; $("adminBtn").hidden = true;

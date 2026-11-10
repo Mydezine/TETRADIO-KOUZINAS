@@ -313,3 +313,17 @@ body.readonly [data-act="share"], body.readonly [data-act="team"] { display: non
   .order-out { border: 0; padding: 0; }
 }
 .sec-title .hint { text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+/* Notifications */
+.top-right { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.bell-btn { position: relative; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--line); background: var(--surface); color: var(--ink); display: grid; place-items: center; cursor: pointer; }
+.bell-btn:hover { border-color: var(--accent); }
+.badge { position: absolute; top: -3px; right: -3px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px; background: var(--danger); color: #fff; font-size: .7rem; font-weight: 700; display: grid; place-items: center; }
+.push-box { display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; background: var(--accent-soft); border-radius: 8px; padding: 10px 12px; font-size: .9rem; }
+.push-box span { flex: 1 1 200px; }
+.notif-list { display: flex; flex-direction: column; gap: 4px; max-height: 50vh; overflow-y: auto; }
+.notif { display: flex; flex-direction: column; gap: 1px; text-align: left; background: none; border: 0; border-left: 3px solid transparent; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+.notif:hover { background: var(--sunk); }
+.notif.unread { border-left-color: var(--accent); background: var(--accent-soft); }
+.notif small { color: var(--muted); font-size: .78rem; }
+.chef-main small.online { color: var(--accent); font-weight: 600; }
