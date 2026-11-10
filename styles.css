@@ -359,3 +359,13 @@ body.readonly [data-act="share"], body.readonly [data-act="team"] { display: non
 @media (max-width: 780px) { .comp-body { grid-template-columns: minmax(0, 1fr); } .components { padding: 16px; } }
 .sheet-body.one-col { grid-template-columns: minmax(0, 1fr); }
 .costing-off { border-top: 1px solid var(--line); padding: 10px 22px; }
+
+/* Logo */
+.logo-h { margin: 0; line-height: 0; }
+.logo { height: 58px; width: auto; max-width: 100%; display: block; }
+.auth-top .logo { height: 80px; }
+.logo-link { display: inline-block; }
+@media (prefers-color-scheme: dark) {
+  .logo { background: #fff; border-radius: 12px; padding: 4px 8px; }
+}
+@media (max-width: 420px) { .logo { height: 48px; } .auth-top .logo { height: 64px; } }

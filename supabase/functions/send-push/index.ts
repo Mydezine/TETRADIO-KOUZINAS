@@ -10,13 +10,13 @@ const TEXT: Record<string, Record<string, (p: Record<string, string>) => { title
   el: {
     team_join: (p) => ({ title: "Νέο μέλος στην ομάδα", body: `${p.name} μπήκε στην ομάδα «${p.team}».` }),
     team_recipe: (p) => ({ title: `Νέα συνταγή · ${p.team}`, body: p.title }),
-    new_chef: (p) => ({ title: "Νέος μάγειρας", body: `${p.email} γράφτηκε στο Τετράδιο Κουζίνας.` }),
+    new_chef: (p) => ({ title: "Νέος μάγειρας", body: `${p.email} γράφτηκε στο MyRecipes.gr.` }),
     chef_active: (p) => ({ title: "Μάγειρας online", body: `${p.name} άνοιξε τώρα την εφαρμογή.` }),
   },
   en: {
     team_join: (p) => ({ title: "New team member", body: `${p.name} joined the team “${p.team}”.` }),
     team_recipe: (p) => ({ title: `New recipe · ${p.team}`, body: p.title }),
-    new_chef: (p) => ({ title: "New chef", body: `${p.email} signed up to Kitchen Notebook.` }),
+    new_chef: (p) => ({ title: "New chef", body: `${p.email} signed up to MyRecipes.gr.` }),
     chef_active: (p) => ({ title: "Chef online", body: `${p.name} just opened the app.` }),
   },
 };

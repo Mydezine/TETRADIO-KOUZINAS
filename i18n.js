@@ -4,7 +4,6 @@
 window.I18N_EN = {
   exact: {
     // header, menu, navigation
-    "Τετράδιο Κουζίνας": "Kitchen Notebook",
     "Οι συνταγές μου, ανά εστιατόριο": "My recipes, by restaurant",
     "Οι συνταγές μου, οργανωμένες ανά εστιατόριο.": "My recipes, organised by restaurant.",
     "Κοινοποιημένη συνταγή": "Shared recipe",
@@ -250,7 +249,7 @@ window.I18N_EN = {
     "Εισαγωγή αντιγράφου;": "Import backup?",
     "Εισαγωγή": "Import",
     "Η εισαγωγή ολοκληρώθηκε": "Import complete",
-    "Το αρχείο δεν είναι αντίγραφο του Τετραδίου.": "This file isn't a Kitchen Notebook backup.",
+    "Το αρχείο δεν είναι αντίγραφο του MyRecipes.gr.": "This file isn't a MyRecipes.gr backup.",
     "Το αρχείο δεν έχει συνταγές.": "The file has no recipes.",
     "Το αντίγραφο κατέβηκε": "Backup downloaded",
 
@@ -266,7 +265,7 @@ window.I18N_EN = {
     "Η συνταγή δεν βρέθηκε": "Recipe not found",
     "Ο σύνδεσμος μπορεί να έχει σταματήσει να ισχύει. Ζήτα από τον μάγειρα να σου στείλει νέο.": "The link may no longer be valid. Ask the chef to send you a new one.",
     "Θέλεις κι εσύ να κρατάς τις συνταγές σου οργανωμένες;": "Want to keep your own recipes organised?",
-    "Φτιάξε το δικό σου Τετράδιο Κουζίνας": "Create your own Kitchen Notebook",
+    "Φτιάξε κι εσύ λογαριασμό στο MyRecipes.gr": "Create your own MyRecipes.gr account",
 
     // teams
     "Δημιουργία ομάδας": "Create team",
@@ -372,7 +371,6 @@ window.I18N_EN = {
     [/^Όποιος έχει αυτόν τον σύνδεσμο βλέπει τη συνταγή «(.+)», χωρίς λογαριασμό\. Δεν βλέπει τιμές, κόστος ή τις άλλες συνταγές σου\.$/, "Anyone with this link can see the recipe “$1” without an account. They can't see prices, costs or your other recipes."],
     [/^Φτιάξε σύνδεσμο για να στείλεις τη συνταγή «(.+)» σε συνάδελφο, π\.χ\. με Viber ή WhatsApp\. Θα τη βλέπει χωρίς λογαριασμό, χωρίς τιμές και κόστος\.$/, "Create a link to send the recipe “$1” to a colleague, e.g. on WhatsApp. They'll see it without an account, without prices or costs."],
     [/^Βρέθηκαν (\d+) συνταγές$/, "Found $1 recipes"],
-    [/^(.+) · Τετράδιο Κουζίνας$/, "$1 · Kitchen Notebook"],
     [/^(.+) \(αντίγραφο\)$/, "$1 (copy)"],
     [/^Μπες στην ομάδα κουζίνας «(.+)» με κωδικό (.+)$/, "Join the kitchen team “$1” with code $2"],
     [/^Συνταγή: (.+)$/, "Recipe: $1"],

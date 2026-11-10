@@ -1,7 +1,7 @@
 {
-  "name": "Τετράδιο Κουζίνας",
-  "short_name": "Συνταγές",
-  "description": "Οι συνταγές μου, οργανωμένες ανά εστιατόριο.",
+  "name": "MyRecipes.gr",
+  "short_name": "MyRecipes",
+  "description": "MyRecipes.gr: οι συνταγές μου, οργανωμένες ανά εστιατόριο.",
   "lang": "el",
   "start_url": "./",
   "scope": "./",

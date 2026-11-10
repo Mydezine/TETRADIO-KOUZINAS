@@ -1174,12 +1174,12 @@
         </div>
         ${componentsHtml(r)}
         ${platingHtml(r, platingUrl ? `<img src="${esc(platingUrl)}" alt="">` : "")}</article>
-        <div class="share-cta">Θέλεις κι εσύ να κρατάς τις συνταγές σου οργανωμένες; <a class="btn primary" href="${esc(appUrl())}">Φτιάξε το δικό σου Τετράδιο Κουζίνας</a></div>`;
+        <div class="share-cta">Θέλεις κι εσύ να κρατάς τις συνταγές σου οργανωμένες; <a class="btn primary" href="${esc(appUrl())}">Φτιάξε κι εσύ λογαριασμό στο MyRecipes.gr</a></div>`;
       const sc = $("scale");
       if (sc) sc.addEventListener("change", () => { const v = parseFloat(sc.value.replace(",", ".")); target = v > 0 ? v : r.yieldQty; paint(); });
       box.querySelectorAll("[data-act=units]").forEach((b) => b.addEventListener("click", () => { setUnits(b.dataset.u); paint(); }));
     };
-    document.title = tr(`${r.title} · Τετράδιο Κουζίνας`);
+    document.title = `${r.title} · MyRecipes.gr`;
     paint();
   }
   function setUnits(u) { S.units = u === "metric" ? "metric" : "orig"; try { localStorage.setItem("units", S.units); } catch { /* ignore */ } }
@@ -1229,7 +1229,7 @@
           <button class="btn ghost" data-remove="${esc(m.user_id)}">Αφαίρεση</button></div>`).join("") || '<p class="hint">Δεν έχει μπει κανείς ακόμα.</p>'}</div>
         <div class="form-actions"><button class="btn danger" id="teamEnd">Διάλυση ομάδας</button><button class="btn" data-act="close">Κλείσιμο</button></div>`;
       $("teamCopy").addEventListener("click", () => copyText(link));
-      if ($("teamSend")) $("teamSend").addEventListener("click", () => navigator.share({ title: tr("Τετράδιο Κουζίνας"), text: tr(`Μπες στην ομάδα κουζίνας «${team.name}» με κωδικό ${team.invite_code}`), url: link }).catch(() => {}));
+      if ($("teamSend")) $("teamSend").addEventListener("click", () => navigator.share({ title: "MyRecipes.gr", text: tr(`Μπες στην ομάδα κουζίνας «${team.name}» με κωδικό ${team.invite_code}`), url: link }).catch(() => {}));
       $("teamNewCode").addEventListener("click", async () => {
         try { check(await sb.from("teams").update({ invite_code: inviteCode() }).eq("id", team.id)); toast("Ο παλιός κωδικός δεν ισχύει πια"); closeModal(); teamDialog(rest); } catch (e) { toast(writeError(e)); }
       });
@@ -1511,7 +1511,7 @@
     const file = ev.target.files[0]; ev.target.value = "";
     if (!file) return;
     let json;
-    try { json = JSON.parse(await file.text()); } catch { toast("Το αρχείο δεν είναι αντίγραφο του Τετραδίου."); return; }
+    try { json = JSON.parse(await file.text()); } catch { toast("Το αρχείο δεν είναι αντίγραφο του MyRecipes.gr."); return; }
     const rests = Array.isArray(json.restaurants) ? json.restaurants : [];
     const recs = Array.isArray(json.recipes) ? json.recipes : [];
     if (!rests.length && !recs.length) { toast("Το αρχείο δεν έχει συνταγές."); return; }
