@@ -184,7 +184,7 @@
     let body;
     if (!S.loaded) body = `<div class="empty"><h3>Φόρτωση συνταγών…</h3></div>`;
     else if (!S.recipes.length && S.viewing) body = `<div class="empty"><h3>Δεν υπάρχουν ακόμα συνταγές εδώ</h3></div>`;
-    else if (!S.recipes.length) body = `<div class="empty"><h3>Δεν έχεις γράψει ακόμα καμία συνταγή</h3>Πρόσθεσε πρώτα τα εστιατόρια που έχεις δουλέψει και μετά γράψε τις συνταγές σου.<br>Οι άλλοι μάγειρες δεν βλέπουν τις συνταγές σου.<br><button class="btn primary" data-act="new">+ Νέα συνταγή</button> <button class="btn" data-act="import">Ανέβασμα έτοιμης συνταγής</button></div>`;
+    else if (!S.recipes.length) body = `<div class="empty"><h3>Δεν έχεις γράψει ακόμα καμία συνταγή</h3>Πρόσθεσε πρώτα τα εστιατόρια που έχεις δουλέψει και μετά γράψε τις συνταγές σου.<br>Οι άλλοι μάγειρες δεν βλέπουν τις συνταγές σου.<br><button class="btn primary" data-act="new">+ Νέα συνταγή</button></div>`;
     else if (!list.length) body = `<div class="empty"><h3>Καμία συνταγή εδώ</h3>${S.q || S.cat ? "Δοκίμασε άλλη αναζήτηση ή κατηγορία." : "Δεν υπάρχουν ακόμα συνταγές σε αυτό το εστιατόριο."}<br><button class="btn primary" data-act="new">+ Νέα συνταγή</button></div>`;
     else body = `<div class="grid">${list.map((r) => {
       const t = (r.prepMin || 0) + (r.cookMin || 0);
@@ -454,7 +454,20 @@
     });
   }
 
+  // "+ Νέα συνταγή": first choose between writing it now or uploading a ready one.
   function newRecipe() {
+    toggleMenu(false);
+    modal(`<h3>Νέα συνταγή</h3>
+      <div class="choose">
+        <button class="choice" id="chooseWrite"><b>Φτιάξε τώρα</b><span>Γράψε τη συνταγή από την αρχή.</span></button>
+        <button class="choice" id="chooseUpload"><b>Ανέβασε έτοιμη</b><span>Από φωτογραφία, PDF, Word ή κείμενο που έχεις ήδη γραμμένο.</span></button>
+      </div>
+      <div class="form-actions"><button class="btn" data-act="close">Ακύρωση</button></div>`, () => {
+      $("chooseWrite").addEventListener("click", () => { closeModal(); newRecipeForm(); });
+      $("chooseUpload").addEventListener("click", () => { closeModal(); importDialog(); });
+    });
+  }
+  function newRecipeForm() {
     S.edit = { restaurantId: S.restaurants.some((r) => r.id === S.sel) ? S.sel : "" };
     S.view = "form"; render(); window.scrollTo(0, 0);
   }
@@ -468,7 +481,7 @@
     if (t.dataset.act === "units") { setUnits(t.dataset.u); if (S.view === "detail") renderDetail(); return; }
     if (t.dataset.act === "order") { toggleMenu(false); S.order = null; S.view = "order"; render(); window.scrollTo(0, 0); return; }
     if (t.dataset.act === "leave-team") { leaveTeam(); return; }
-    if (t.dataset.act === "admin") { openAdmin(); return; }
+    if (t.dataset.act === "admin") { toggleMenu(false); openAdmin(); return; }
     if (t.dataset.act === "my-notebook") { S.viewing = null; S.view = "list"; S.sel = "all"; S.loaded = false; render(); loadAll(); return; }
     if (S.viewing && ["new", "import", "edit", "dup", "del", "edit-rest", "del-rest", "share", "team"].includes(t.dataset.act)) return;
     if (t.dataset.sel !== undefined) { S.sel = t.dataset.sel; S.view = "list"; render(); return; }
@@ -506,8 +519,6 @@
     }
   });
   $("newRecipeBtn").addEventListener("click", newRecipe);
-  $("importBtn").addEventListener("click", importDialog);
-  $("importRecipeMenu").addEventListener("click", importDialog);
   $("addRestBtn").addEventListener("click", () => restaurantForm());
 
   // ---------- dish photos ----------

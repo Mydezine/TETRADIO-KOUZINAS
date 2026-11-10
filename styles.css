@@ -372,3 +372,11 @@ body.readonly [data-act="share"], body.readonly [data-act="team"] { display: non
   .logo { filter: drop-shadow(0 0 1px rgba(255,255,255,.85)) drop-shadow(0 0 5px rgba(255,255,255,.18)); }
 }
 @media (max-width: 420px) { .logo { height: 64px; } .auth-top .logo { height: 96px; } }
+
+/* New recipe chooser */
+.choose { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.choice { display: flex; flex-direction: column; gap: 4px; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 16px; cursor: pointer; }
+.choice b { font-family: var(--f-display); font-size: 1.05rem; }
+.choice span { color: var(--muted); font-size: .88rem; }
+.choice:hover { border-color: var(--accent); background: var(--accent-soft); }
+@media (max-width: 420px) { .choose { grid-template-columns: 1fr; } }
