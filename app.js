@@ -545,15 +545,30 @@
     } catch { return { fallback: true }; }
   }
 
-  function importDialog() {
+  // Checks once whether smart reading (photos, PDF) is switched on. An empty request is free.
+  let aiReady = null;
+  async function checkAi() {
+    if (aiReady !== null) return aiReady;
+    try {
+      const { error } = await sb.functions.invoke("import-recipe", { body: {} });
+      let code = "";
+      if (error) { try { code = (await error.context.json()).error || ""; } catch { /* not deployed */ } }
+      aiReady = code === "empty" || code === "bad_request";
+    } catch { aiReady = false; }
+    return aiReady;
+  }
+
+  async function importDialog() {
     toggleMenu(false);
+    const ai = await checkAi();
     modal(`<h3>Ανέβασμα συνταγής</h3>
-      <p>Φωτογραφία από το τετράδιό σου, PDF, Word ή κείμενο. Η εφαρμογή τη διαβάζει και τη μετατρέπει σε συνταγή, για να την ελέγξεις πριν την αποθηκεύσεις.</p>
+      ${ai ? `<p>Φωτογραφία από το τετράδιό σου, PDF, Word ή κείμενο. Η εφαρμογή τη διαβάζει και τη μετατρέπει σε συνταγή, για να την ελέγξεις πριν την αποθηκεύσεις.</p>`
+        : `<p>Ανέβασε αρχείο Word ή κείμενο, ή επικόλλησε τη συνταγή. Η εφαρμογή βρίσκει όνομα, υλικά, βήματα και σημειώσεις, για να την ελέγξεις πριν την αποθηκεύσεις. Βοηθάει να έχει επικεφαλίδες «Υλικά» και «Εκτέλεση».</p>`}
       <div class="import-pick">
-        <label class="btn" for="imp-camera">Φωτογραφία</label>
-        <label class="btn" for="imp-file">Αρχείο (PDF, Word, κείμενο)</label>
+        ${ai ? `<label class="btn" for="imp-camera">Φωτογραφία</label>` : ""}
+        <label class="btn" for="imp-file">${ai ? "Αρχείο (PDF, Word, κείμενο)" : "Αρχείο (Word, κείμενο)"}</label>
         <input type="file" id="imp-camera" accept="image/*" capture="environment" hidden>
-        <input type="file" id="imp-file" accept="image/*,application/pdf,.pdf,.docx,.txt,.md,text/plain" hidden>
+        <input type="file" id="imp-file" accept="${ai ? "image/*,application/pdf,.pdf," : ""}.docx,.txt,.md,text/plain" hidden>
       </div>
       <div id="imp-chosen" class="hint" hidden></div>
       <label class="f">ή επικόλλησε το κείμενο<textarea id="imp-text" rows="6" placeholder="Μουσακάς&#10;Υλικά&#10;1,5 kg μελιτζάνες&#10;…&#10;Εκτέλεση&#10;…"></textarea></label>
@@ -593,9 +608,9 @@
             }
           }
           if (text) body.text = text;
-          let result = await readWithAi(body);
+          let result = ai ? await readWithAi(body) : { fallback: true };
           if (result.fallback) {
-            if (!text) throw new Error("Η αυτόματη ανάγνωση φωτογραφιών και PDF δεν έχει ενεργοποιηθεί ακόμα. Επικόλλησε το κείμενο της συνταγής.");
+            if (!text) throw new Error("Η ανάγνωση φωτογραφιών και PDF δεν είναι ενεργή. Ανέβασε Word ή επικόλλησε το κείμενο της συνταγής.");
             result = { recipes: parseRecipeText(text) };
           }
           if (result.error) throw new Error(result.error);
