@@ -5,7 +5,8 @@
   const ALLERGENS = ["Γλουτένη", "Καρκινοειδή", "Αυγά", "Ψάρια", "Αράπικα φιστίκια", "Σόγια", "Γάλα", "Ξηροί καρποί", "Σέλινο", "Μουστάρδα", "Σουσάμι", "Θειώδη", "Λούπινο", "Μαλάκια"];
   const UNITS = ["g", "gr", "γρ", "γρ.", "kg", "κιλό", "κιλά", "mg", "ml", "l", "lt", "λτ", "cl", "dl", "τεμ", "τεμ.", "τεμάχια", "κ.σ.", "κσ", "κ.γ.", "κγ", "φλ.", "φλιτζάνι", "φλιτζάνια", "πρέζα", "ματσάκι", "ματσάκια", "σκελίδα", "σκελίδες", "φύλλα", "κλωνάρια", "κλωνάρι", "φέτες", "φέτα", "oz", "lb", "tbsp", "tsp", "cup", "pcs"];
 
-  const S = { restaurants: [], recipes: [], sel: "all", q: "", cat: "", view: "list", id: null, scale: null, edit: null, loaded: false, user: null, isAdmin: false, viewing: null, chefs: null, profile: null };
+  const S = { restaurants: [], recipes: [], sel: "all", q: "", cat: "", view: "list", id: null, scale: null, edit: null, loaded: false, user: null, isAdmin: false, viewing: null, chefs: null, profile: null, prices: {}, teams: [], order: null, orderQ: "", units: "orig" };
+  try { if (localStorage.getItem("units") === "metric") S.units = "metric"; } catch { /* ignore */ }
   const $ = (id) => document.getElementById(id);
   const main = $("main");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -26,7 +27,7 @@
     id: r.id, restaurantId: r.restaurant_id || "", title: r.title, category: r.category,
     yieldQty: r.yield_qty != null ? Number(r.yield_qty) : null, yieldUnit: r.yield_unit, prepMin: r.prep_min, cookMin: r.cook_min,
     ingredients: r.ingredients || [], steps: r.steps || [], allergens: r.allergens || [], notes: r.notes || "", createdAt: r.created_at,
-    photoPath: r.photo_path || null,
+    photoPath: r.photo_path || null, sellPrice: r.sell_price != null ? Number(r.sell_price) : null, shareToken: r.share_token || null,
   });
   const toRec = (d) => ({
     restaurant_id: d.restaurantId || null, title: d.title, category: d.category || "Άλλο",
@@ -35,10 +36,12 @@
   });
 
   async function loadAll() {
-    const owner = S.viewing ? S.viewing.id : S.user.id;
+    const team = S.viewing && S.viewing.team ? S.viewing : null;
+    const owner = S.viewing && !team ? S.viewing.id : S.user.id;
     const [r, p] = await Promise.all([
-      sb.from("restaurants").select("*").eq("user_id", owner).order("name"),
-      sb.from("recipes").select("*").eq("user_id", owner).order("title"),
+      team ? sb.from("restaurants").select("*").eq("id", team.restaurantId) : sb.from("restaurants").select("*").eq("user_id", owner).order("name"),
+      team ? sb.from("recipes").select("*").eq("restaurant_id", team.restaurantId).order("title") : sb.from("recipes").select("*").eq("user_id", owner).order("title"),
+      loadPrices(owner),
     ]);
     if (r.error || p.error) { notice("Δεν φόρτωσαν οι συνταγές. Έλεγξε τη σύνδεσή σου και ανανέωσε τη σελίδα."); S.loaded = true; render(); return; }
     notice("");
@@ -91,6 +94,11 @@
     });
     if (counts[""]) h += `<button class="r ${S.sel === "" ? "on" : ""}" data-sel=""><span class="rn">Χωρίς εστιατόριο</span><span class="rc">${counts[""]}</span></button>`;
     $("rail").innerHTML = h;
+    const tr = $("teamRail");
+    if (tr) {
+      tr.hidden = !S.teams.length;
+      tr.querySelector(".rail").innerHTML = S.teams.map((t) => `<button class="r ${S.viewing && S.viewing.teamId === t.team_id ? "on" : ""}" data-team="${esc(t.team_id)}"><span class="rn">${esc(t.team_name)}</span><span class="rm">Σεφ: ${esc(t.owner_name || t.owner_email)}</span></button>`).join("");
+    }
   }
 
   function filtered() {
@@ -111,7 +119,7 @@
     if (rest) {
       const meta = [rest.role, rest.city, rest.years].filter(Boolean).join(" · ");
       head = `<div class="rest-head"><div><h2>${esc(rest.name)}</h2>${meta ? `<p>${esc(meta)}</p>` : ""}</div>
-        <div class="sheet-actions"><button class="btn" data-act="edit-rest">Επεξεργασία</button><button class="btn danger" data-act="del-rest">Διαγραφή</button></div></div>`;
+        <div class="sheet-actions"><button class="btn" data-act="team">Ομάδα κουζίνας</button><button class="btn" data-act="edit-rest">Επεξεργασία</button><button class="btn danger" data-act="del-rest">Διαγραφή</button></div></div>`;
     }
     const tools = `<div class="toolbar">
       <input type="search" id="q" placeholder="Αναζήτηση συνταγής ή υλικού…" value="${esc(S.q)}" aria-label="Αναζήτηση">
@@ -119,6 +127,7 @@
     </div>`;
     let body;
     if (!S.loaded) body = `<div class="empty"><h3>Φόρτωση συνταγών…</h3></div>`;
+    else if (!S.recipes.length && S.viewing) body = `<div class="empty"><h3>Δεν υπάρχουν ακόμα συνταγές εδώ</h3></div>`;
     else if (!S.recipes.length) body = `<div class="empty"><h3>Δεν έχεις γράψει ακόμα καμία συνταγή</h3>Πρόσθεσε πρώτα τα εστιατόρια που έχεις δουλέψει και μετά γράψε τις συνταγές σου.<br>Οι άλλοι μάγειρες δεν βλέπουν τις συνταγές σου.<br><button class="btn primary" data-act="new">+ Νέα συνταγή</button> <button class="btn" data-act="import">Ανέβασμα έτοιμης συνταγής</button></div>`;
     else if (!list.length) body = `<div class="empty"><h3>Καμία συνταγή εδώ</h3>${S.q || S.cat ? "Δοκίμασε άλλη αναζήτηση ή κατηγορία." : "Δεν υπάρχουν ακόμα συνταγές σε αυτό το εστιατόριο."}<br><button class="btn primary" data-act="new">+ Νέα συνταγή</button></div>`;
     else body = `<div class="grid">${list.map((r) => {
@@ -147,7 +156,7 @@
     const factor = base && target ? target / base : 1;
     const scaled = Math.abs(factor - 1) > 1e-9;
     const ings = (r.ingredients || []).map((i) => {
-      const f = fmtQty(i.qty != null ? i.qty * factor : null, i.unit);
+      const f = showQty(i.qty != null ? i.qty * factor : null, i.unit);
       return `<tr><td class="q">${esc(f.q)}<span>${esc(f.u)}</span></td><td>${esc(i.name)}</td></tr>`;
     }).join("");
     const facts = [
@@ -166,6 +175,7 @@
         ${(r.allergens || []).length ? `<div class="allergens" aria-label="Αλλεργιογόνα">${r.allergens.map((a) => `<span>${esc(a)}</span>`).join("")}</div>` : ""}
         <div class="sheet-actions">
           <button class="btn" data-act="edit">Επεξεργασία</button>
+          <button class="btn" data-act="share">${r.shareToken ? "Κοινοποιημένη ✓" : "Κοινοποίηση"}</button>
           <button class="btn" data-act="dup">Αντιγραφή</button>
           <button class="btn danger" data-act="del">Διαγραφή</button>
         </div>
@@ -176,7 +186,7 @@
             ${base ? `<label class="scaler">Για <input id="scale" type="number" min="0" step="any" inputmode="decimal" value="${esc(target)}"> ${esc(r.yieldUnit || "")}
               ${scaled ? `<button class="btn ghost" data-act="reset-scale" style="padding:2px 8px">Επαναφορά</button>` : ""}</label>` : ""}
           </div>
-          ${ings ? `<table class="ing ${scaled ? "scaled" : ""}"><tbody>${ings}</tbody></table>` : `<p class="sheet-sub">Δεν έχουν γραφτεί υλικά.</p>`}
+          ${ings ? `<div class="units-row">${unitToggle()}</div><table class="ing ${scaled ? "scaled" : ""}"><tbody>${ings}</tbody></table>` : `<p class="sheet-sub">Δεν έχουν γραφτεί υλικά.</p>`}
         </section>
         <section>
           <div class="sec-title"><span>Εκτέλεση</span></div>
@@ -184,9 +194,11 @@
           ${r.notes ? `<div class="ticket"><strong>Σημειώσεις σεφ</strong>${esc(r.notes)}</div>` : ""}
         </section>
       </div>
+      ${S.viewing && S.viewing.team ? "" : `<section class="costing" id="costBox">${costingHtml(r, factor, target)}</section>`}
     </article>`;
     const sc = $("scale");
     if (sc) sc.addEventListener("change", () => { const v = parseFloat(sc.value.replace(",", ".")); S.scale = v > 0 ? v : null; renderDetail(); });
+    wireCosting(r, factor, target);
   }
 
   function renderForm() {
@@ -228,10 +240,11 @@
 
   function render() {
     document.body.classList.toggle("readonly", !!S.viewing);
-    document.querySelector(".app").classList.toggle("admin-mode", S.view === "admin");
+    document.querySelector(".app").classList.toggle("admin-mode", S.view === "admin" || S.view === "order");
     renderBanner();
     renderRail();
     if (S.view === "admin") renderAdmin();
+    else if (S.view === "order") renderOrder();
     else if (S.view === "detail") renderDetail();
     else if (S.view === "form") renderForm();
     else renderList();
@@ -327,18 +340,24 @@
 
   document.addEventListener("click", (e) => {
     if (!e.target.closest(".menu-wrap")) toggleMenu(false);
-    const t = e.target.closest("[data-sel],[data-open],[data-act],[data-chef]");
+    const t = e.target.closest("[data-sel],[data-open],[data-act],[data-chef],[data-team]");
     if (!t || t.closest("#overlay")) return;
     if (t.dataset.chef) { openChef(t.dataset.chef); return; }
+    if (t.dataset.team) { openTeam(t.dataset.team); return; }
+    if (t.dataset.act === "units") { setUnits(t.dataset.u); if (S.view === "detail") renderDetail(); return; }
+    if (t.dataset.act === "order") { toggleMenu(false); S.order = null; S.view = "order"; render(); window.scrollTo(0, 0); return; }
+    if (t.dataset.act === "leave-team") { leaveTeam(); return; }
     if (t.dataset.act === "admin") { openAdmin(); return; }
     if (t.dataset.act === "my-notebook") { S.viewing = null; S.view = "list"; S.sel = "all"; S.loaded = false; render(); loadAll(); return; }
-    if (S.viewing && ["new", "import", "edit", "dup", "del", "edit-rest", "del-rest"].includes(t.dataset.act)) return;
+    if (S.viewing && ["new", "import", "edit", "dup", "del", "edit-rest", "del-rest", "share", "team"].includes(t.dataset.act)) return;
     if (t.dataset.sel !== undefined) { S.sel = t.dataset.sel; S.view = "list"; render(); return; }
     if (t.dataset.open) { S.id = t.dataset.open; S.scale = null; S.view = "detail"; render(); window.scrollTo(0, 0); return; }
     const r = S.recipes.find((x) => x.id === S.id);
     const rest = S.restaurants.find((x) => x.id === S.sel);
     switch (t.dataset.act) {
       case "new": newRecipe(); break;
+      case "share": shareDialog(r); break;
+      case "team": teamDialog(rest); break;
       case "import": importDialog(); break;
       case "back": S.view = "list"; render(); break;
       case "reset-scale": S.scale = null; renderDetail(); break;
@@ -666,6 +685,432 @@
     });
   }
 
+  // ---------- units: conversion to grams / ml ----------
+  const UNIT_INFO = {
+    g: ["m", 1], gr: ["m", 1], "γρ": ["m", 1], "γρ.": ["m", 1], kg: ["m", 1000], "κιλό": ["m", 1000], "κιλά": ["m", 1000], mg: ["m", 0.001], oz: ["m", 28.35], lb: ["m", 453.6],
+    ml: ["v", 1], l: ["v", 1000], lt: ["v", 1000], "λτ": ["v", 1000], cl: ["v", 10], dl: ["v", 100],
+    "κ.σ.": ["v", 15], "κσ": ["v", 15], tbsp: ["v", 15], "κ.γ.": ["v", 5], "κγ": ["v", 5], tsp: ["v", 5],
+    "φλ.": ["v", 240], "φλιτζάνι": ["v", 240], "φλιτζάνια": ["v", 240], cup: ["v", 240],
+    "τεμ": ["c", 1], "τεμ.": ["c", 1], "τεμάχια": ["c", 1], pcs: ["c", 1],
+  };
+  const unitInfo = (u) => { const x = UNIT_INFO[(u || "").trim().toLowerCase()]; return x ? { dim: x[0], f: x[1] } : null; };
+  function fmtBase(dim, base) {
+    let n = base, u = dim === "m" ? "g" : dim === "v" ? "ml" : "τεμ";
+    if (dim === "m" && n >= 1000) { n /= 1000; u = "kg"; }
+    if (dim === "v" && n >= 1000) { n /= 1000; u = "l"; }
+    const d = n >= 100 ? 0 : n >= 10 ? 1 : 2;
+    return { q: nf(n, d), u };
+  }
+  function showQty(qty, unit) {
+    if (qty != null && S.units === "metric") { const info = unitInfo(unit); if (info) return fmtBase(info.dim, qty * info.f); }
+    return fmtQty(qty, unit);
+  }
+  function unitToggle() {
+    return `<span class="seg" role="group" aria-label="Μονάδες">
+      <button type="button" data-act="units" data-u="orig" class="${S.units !== "metric" ? "on" : ""}">Όπως γράφτηκαν</button>
+      <button type="button" data-act="units" data-u="metric" class="${S.units === "metric" ? "on" : ""}">g / ml</button></span>`;
+  }
+
+  // ---------- costing (food cost) ----------
+  const priceKey = (name) => String(name || "").split(",")[0].trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ");
+  const euro = (n) => n == null || !isFinite(n) ? "—" : n.toLocaleString("el-GR", { style: "currency", currency: "EUR" });
+  const PRICE_DIM = { kg: "m", l: "v", "τεμ": "c" };
+  async function loadPrices(ownerId) {
+    const { data, error } = await sb.from("ingredient_prices").select("*").eq("user_id", ownerId);
+    S.prices = {};
+    if (!error) (data || []).forEach((p) => { S.prices[p.name_key] = { name: p.name, price: Number(p.price), unit: p.unit }; });
+  }
+  // Cost of one ingredient line after scaling. Returns { cost, approx } or null when it can't be priced.
+  function lineCost(i, factor) {
+    const p = S.prices[priceKey(i.name)];
+    if (!p || i.qty == null) return null;
+    const pdim = PRICE_DIM[p.unit];
+    const info = unitInfo(i.unit);
+    if (!info) return pdim === "c" && !i.unit ? { cost: i.qty * factor * p.price, approx: false } : null;
+    const base = i.qty * factor * info.f;
+    if (info.dim === pdim) return { cost: pdim === "c" ? base * p.price : (base / 1000) * p.price, approx: false };
+    if (pdim !== "c" && info.dim !== "c") return { cost: (base / 1000) * p.price, approx: true }; // g <-> ml, as if water
+    return null;
+  }
+  const isPortions = (u) => /μερίδ|μεριδ|άτομ|ατομ|portion|serving|τεμ/i.test(u || "");
+  function guessPriceUnit(i) { const info = unitInfo(i.unit); return info ? (info.dim === "v" ? "l" : info.dim === "c" ? "τεμ" : "kg") : (i.unit ? "kg" : "τεμ"); }
+
+  function costingHtml(r, factor, target) {
+    const ro = !!S.viewing;
+    let total = 0, missing = 0, approx = false;
+    const rows = (r.ingredients || []).map((i, idx) => {
+      const p = S.prices[priceKey(i.name)];
+      const c = lineCost(i, factor);
+      if (i.qty != null) { if (c) { total += c.cost; approx = approx || c.approx; } else missing++; }
+      const q = showQty(i.qty != null ? i.qty * factor : null, i.unit);
+      const unit = p ? p.unit : guessPriceUnit(i);
+      return `<tr>
+        <td class="c-name">${esc(i.name)}<small>${esc([q.q, q.u].filter(Boolean).join(" "))}</small></td>
+        <td class="c-price"><input id="price-${idx}" type="number" min="0" step="0.01" inputmode="decimal" placeholder="τιμή" value="${p ? esc(p.price) : ""}" ${ro ? "disabled" : ""} aria-label="Τιμή για ${esc(i.name)}">
+          <select id="punit-${idx}" ${ro ? "disabled" : ""} aria-label="Μονάδα τιμής">${["kg", "l", "τεμ"].map((u) => `<option ${u === unit ? "selected" : ""}>${u}</option>`).join("")}</select></td>
+        <td class="c-cost">${i.qty == null ? '<span class="hint">—</span>' : c ? euro(c.cost) + (c.approx ? "*" : "") : '<span class="hint">χωρίς τιμή</span>'}</td>
+      </tr>`;
+    }).join("");
+    const portions = isPortions(r.yieldUnit) && target ? target : null;
+    const perPortion = portions ? total / portions : null;
+    const sell = r.sellPrice;
+    const fc = perPortion && sell ? (perPortion / sell) * 100 : null;
+    const fcClass = fc == null ? "" : fc <= 30 ? "good" : fc <= 35 ? "warn" : "bad";
+    return `<div class="sec-title"><span>Κοστολόγηση</span><span class="hint">τιμές χωρίς ΦΠΑ, ανά kg / l / τεμ</span></div>
+      ${rows ? `<div class="table-scroll"><table class="cost"><tbody>${rows}</tbody></table></div>` : `<p class="sheet-sub">Πρόσθεσε υλικά για να υπολογιστεί το κόστος.</p>`}
+      <div class="cost-sum">
+        <div><small>Κόστος${target && r.yieldQty ? ` για ${esc(nf(target, 2))} ${esc(r.yieldUnit || "")}` : ""}</small><b>${euro(total)}</b></div>
+        ${portions ? `<div><small>Ανά μερίδα</small><b>${euro(perPortion)}</b></div>` : r.yieldQty && target ? `<div><small>Ανά ${esc(r.yieldUnit || "μονάδα")}</small><b>${euro(total / target)}</b></div>` : ""}
+        ${portions ? `<label><small>Τιμή πώλησης / μερίδα</small><input id="sellPrice" type="number" min="0" step="0.1" inputmode="decimal" value="${sell != null ? esc(sell) : ""}" placeholder="€" ${ro ? "disabled" : ""}></label>
+        <div class="fc ${fcClass}"><small>Food cost</small><b>${fc == null ? "—" : nf(fc, 1) + "%"}</b></div>
+        <div><small>Μικτό κέρδος / μερίδα</small><b>${perPortion != null && sell ? euro(sell - perPortion) : "—"}</b></div>` : ""}
+      </div>
+      ${missing ? `<p class="hint">${missing} υλικά δεν έχουν τιμή ακόμα. Γράψε την τιμή τους και θα μπει σε όλες τις συνταγές σου.</p>` : ""}
+      ${approx ? `<p class="hint">* Υπολογισμός με μετατροπή όγκου σε βάρος (σαν νερό), κατά προσέγγιση.</p>` : ""}
+      ${!portions && r.yieldQty ? `<p class="hint">Για κόστος ανά μερίδα και food cost, βάλε «μερίδες» ως μονάδα απόδοσης.</p>` : ""}`;
+  }
+  function wireCosting(r, factor, target) {
+    const box = $("costBox"); if (!box || S.viewing) return;
+    (r.ingredients || []).forEach((i, idx) => {
+      const save = async () => {
+        const raw = $("price-" + idx).value.trim().replace(",", ".");
+        const unit = $("punit-" + idx).value;
+        const key = priceKey(i.name);
+        try {
+          if (raw === "") {
+            if (!S.prices[key]) return;
+            check(await sb.from("ingredient_prices").delete().eq("user_id", S.user.id).eq("name_key", key));
+            delete S.prices[key];
+          } else {
+            const price = parseFloat(raw);
+            if (!(price >= 0)) return;
+            const name = String(i.name).split(",")[0].trim();
+            check(await sb.from("ingredient_prices").upsert({ user_id: S.user.id, name_key: key, name, price, unit, updated_at: new Date().toISOString() }));
+            S.prices[key] = { name, price, unit };
+          }
+          box.innerHTML = costingHtml(r, factor, target); wireCosting(r, factor, target);
+        } catch (e) { toast(writeError(e)); }
+      };
+      $("price-" + idx).addEventListener("change", save);
+      $("punit-" + idx).addEventListener("change", () => { if ($("price-" + idx).value.trim()) save(); });
+    });
+    const sp = $("sellPrice");
+    if (sp) sp.addEventListener("change", async () => {
+      const v = parseFloat(sp.value.replace(",", "."));
+      const sell = v > 0 ? v : null;
+      try {
+        check(await sb.from("recipes").update({ sell_price: sell }).eq("id", r.id));
+        r.sellPrice = sell; box.innerHTML = costingHtml(r, factor, target); wireCosting(r, factor, target);
+      } catch (e) { toast(writeError(e)); }
+    });
+  }
+
+  function pricesDialog() {
+    toggleMenu(false);
+    const rows = () => Object.entries(S.prices).sort((a, b) => a[1].name.localeCompare(b[1].name, "el"))
+      .map(([k, p]) => `<div class="price-row" data-key="${esc(k)}"><span>${esc(p.name)}</span>
+        <input type="number" min="0" step="0.01" inputmode="decimal" value="${esc(p.price)}" aria-label="Τιμή">
+        <select aria-label="Μονάδα">${["kg", "l", "τεμ"].map((u) => `<option ${u === p.unit ? "selected" : ""}>${u}</option>`).join("")}</select>
+        <button type="button" class="btn ghost" data-rm="1" aria-label="Αφαίρεση">✕</button></div>`).join("");
+    modal(`<h3>Τιμές υλικών</h3>
+      <p>Τιμές χωρίς ΦΠΑ. Κάθε τιμή ισχύει σε όλες τις συνταγές σου όπου υπάρχει το υλικό.</p>
+      <div class="price-list" id="priceList">${rows() || '<p class="hint">Δεν έχεις βάλει ακόμα τιμές. Πρόσθεσε εδώ ή από την κοστολόγηση μιας συνταγής.</p>'}</div>
+      <form class="price-row add" id="priceAdd" novalidate>
+        <input id="pa-name" placeholder="Υλικό, π.χ. ντομάτα" aria-label="Υλικό">
+        <input id="pa-price" type="number" min="0" step="0.01" inputmode="decimal" placeholder="€" aria-label="Τιμή">
+        <select id="pa-unit" aria-label="Μονάδα"><option>kg</option><option>l</option><option>τεμ</option></select>
+        <button class="btn primary">Προσθήκη</button>
+      </form>
+      <div class="form-actions"><button class="btn" data-act="close">Κλείσιμο</button></div>`, () => {
+      const list = $("priceList");
+      const persist = async (key, name, price, unit) => {
+        check(await sb.from("ingredient_prices").upsert({ user_id: S.user.id, name_key: key, name, price, unit, updated_at: new Date().toISOString() }));
+        S.prices[key] = { name, price, unit };
+      };
+      list.addEventListener("change", async (ev) => {
+        const row = ev.target.closest(".price-row"); if (!row) return;
+        const key = row.dataset.key, p = S.prices[key];
+        const price = parseFloat(row.querySelector("input").value.replace(",", "."));
+        if (!(price >= 0)) return;
+        try { await persist(key, p.name, price, row.querySelector("select").value); toast("Αποθηκεύτηκε"); } catch (e) { toast(writeError(e)); }
+      });
+      list.addEventListener("click", async (ev) => {
+        const b = ev.target.closest("[data-rm]"); if (!b) return;
+        const row = b.closest(".price-row"), key = row.dataset.key;
+        try { check(await sb.from("ingredient_prices").delete().eq("user_id", S.user.id).eq("name_key", key)); delete S.prices[key]; row.remove(); } catch (e) { toast(writeError(e)); }
+      });
+      $("priceAdd").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const name = $("pa-name").value.trim(), price = parseFloat($("pa-price").value.replace(",", "."));
+        if (!name || !(price >= 0)) { toast("Γράψε υλικό και τιμή."); return; }
+        try { await persist(priceKey(name), name, price, $("pa-unit").value); closeModal(); pricesDialog(); } catch (e) { toast(writeError(e)); }
+      });
+    });
+  }
+
+  // ---------- share a recipe with a link ----------
+  const randomToken = (n) => { const a = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"; const b = crypto.getRandomValues(new Uint8Array(n)); return Array.from(b, (x) => a[x % a.length]).join(""); };
+  const appUrl = () => location.origin + location.pathname;
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); toast("Αντιγράφηκε"); return true; }
+    catch { toast("Δεν έγινε αντιγραφή. Πάτησε παρατεταμένα πάνω στο κείμενο."); return false; }
+  }
+  function shareDialog(r) {
+    const paint = () => {
+      const link = r.shareToken ? `${appUrl()}?share=${r.shareToken}` : "";
+      modal(`<h3>Κοινοποίηση συνταγής</h3>
+        ${link ? `<p>Όποιος έχει αυτόν τον σύνδεσμο βλέπει τη συνταγή «${esc(r.title)}», χωρίς λογαριασμό. Δεν βλέπει τιμές, κόστος ή τις άλλες συνταγές σου.</p>
+          <input class="field mono" id="shareLink" readonly value="${esc(link)}" aria-label="Σύνδεσμος">
+          <div class="form-actions" style="justify-content:flex-start">
+            <button class="btn primary" id="shareCopy">Αντιγραφή συνδέσμου</button>
+            ${navigator.share ? `<button class="btn" id="shareSend">Αποστολή…</button>` : ""}
+            <button class="btn danger" id="shareStop">Σταμάτα την κοινοποίηση</button>
+          </div>`
+        : `<p>Φτιάξε σύνδεσμο για να στείλεις τη συνταγή «${esc(r.title)}» σε συνάδελφο, π.χ. με Viber ή WhatsApp. Θα τη βλέπει χωρίς λογαριασμό, χωρίς τιμές και κόστος.</p>
+          <div class="form-actions" style="justify-content:flex-start"><button class="btn primary" id="shareMake">Δημιουργία συνδέσμου</button></div>`}
+        <div class="form-actions"><button class="btn" data-act="close">Κλείσιμο</button></div>`, () => {
+        const setToken = async (tok) => {
+          try { check(await sb.from("recipes").update({ share_token: tok }).eq("id", r.id)); r.shareToken = tok; paint(); }
+          catch (e) { toast(writeError(e)); }
+        };
+        if ($("shareMake")) $("shareMake").addEventListener("click", () => setToken(randomToken(24)));
+        if ($("shareCopy")) $("shareCopy").addEventListener("click", () => copyText(link));
+        if ($("shareLink")) $("shareLink").addEventListener("focus", (e) => e.target.select());
+        if ($("shareSend")) $("shareSend").addEventListener("click", () => navigator.share({ title: r.title, text: `Συνταγή: ${r.title}`, url: link }).catch(() => {}));
+        if ($("shareStop")) $("shareStop").addEventListener("click", async () => { await setToken(null); toast("Ο σύνδεσμος δεν λειτουργεί πια"); });
+      });
+    };
+    paint();
+  }
+
+  // Public page for a shared recipe (no sign-in).
+  async function renderSharePage(tok) {
+    $("authView").hidden = true; $("appView").hidden = true; $("setupView").hidden = true;
+    const view = $("shareView"); view.hidden = false;
+    const box = $("shareBox");
+    box.innerHTML = `<div class="empty"><h3>Φόρτωση συνταγής…</h3></div>`;
+    const { data, error } = await sb.rpc("get_shared_recipe", { tok });
+    if (error || !data) {
+      box.innerHTML = `<div class="empty"><h3>Η συνταγή δεν βρέθηκε</h3>Ο σύνδεσμος μπορεί να έχει σταματήσει να ισχύει. Ζήτα από τον μάγειρα να σου στείλει νέο.</div>`;
+      return;
+    }
+    const r = fromRec({ ...data, id: "shared" });
+    let photoUrl = null;
+    if (r.photoPath) { const s = await sb.storage.from(BUCKET).createSignedUrl(r.photoPath, 3600); photoUrl = s.data && s.data.signedUrl; }
+    let target = r.yieldQty || 0;
+    const paint = () => {
+      const factor = r.yieldQty && target ? target / r.yieldQty : 1;
+      const ings = r.ingredients.map((i) => { const f = showQty(i.qty != null ? i.qty * factor : null, i.unit); return `<tr><td class="q">${esc(f.q)}<span>${esc(f.u)}</span></td><td>${esc(i.name)}</td></tr>`; }).join("");
+      const facts = [
+        data.chef_name ? ["Σεφ", data.chef_name] : null,
+        data.restaurant ? ["Εστιατόριο", data.restaurant] : null,
+        r.yieldQty ? ["Απόδοση", `${nf(r.yieldQty, 2)} ${r.yieldUnit || ""}`] : null,
+        r.prepMin ? ["Προετοιμασία", `${r.prepMin}′`] : null,
+        r.cookMin ? ["Μαγείρεμα", `${r.cookMin}′`] : null,
+      ].filter(Boolean);
+      box.innerHTML = `<article class="sheet">
+        ${photoUrl ? `<div class="hero-photo"><img src="${esc(photoUrl)}" alt=""></div>` : ""}
+        <div class="sheet-head"><span class="tag">${esc(r.category || "Άλλο")}</span><h2>${esc(r.title)}</h2>
+          <div class="facts">${facts.map(([k, v]) => `<div class="fact"><small>${esc(k)}</small><b>${esc(v)}</b></div>`).join("")}</div>
+          ${r.allergens.length ? `<div class="allergens">${r.allergens.map((a) => `<span>${esc(a)}</span>`).join("")}</div>` : ""}</div>
+        <div class="sheet-body">
+          <section><div class="sec-title"><span>Υλικά</span>
+            ${r.yieldQty ? `<label class="scaler">Για <input id="scale" type="number" min="0" step="any" inputmode="decimal" value="${esc(target)}"> ${esc(r.yieldUnit || "")}</label>` : ""}</div>
+            <div class="units-row">${unitToggle()}</div>
+            ${ings ? `<table class="ing"><tbody>${ings}</tbody></table>` : ""}</section>
+          <section><div class="sec-title"><span>Εκτέλεση</span></div>
+            ${r.steps.length ? `<ol class="steps">${r.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join("")}</ol>` : ""}
+            ${r.notes ? `<div class="ticket"><strong>Σημειώσεις σεφ</strong>${esc(r.notes)}</div>` : ""}</section>
+        </div></article>
+        <div class="share-cta">Θέλεις κι εσύ να κρατάς τις συνταγές σου οργανωμένες; <a class="btn primary" href="${esc(appUrl())}">Φτιάξε το δικό σου Τετράδιο Κουζίνας</a></div>`;
+      const sc = $("scale");
+      if (sc) sc.addEventListener("change", () => { const v = parseFloat(sc.value.replace(",", ".")); target = v > 0 ? v : r.yieldQty; paint(); });
+      box.querySelectorAll("[data-act=units]").forEach((b) => b.addEventListener("click", () => { setUnits(b.dataset.u); paint(); }));
+    };
+    document.title = `${r.title} · Τετράδιο Κουζίνας`;
+    paint();
+  }
+  function setUnits(u) { S.units = u === "metric" ? "metric" : "orig"; try { localStorage.setItem("units", S.units); } catch { /* ignore */ } }
+
+  // ---------- kitchen teams ----------
+  async function loadTeams() {
+    const { data, error } = await sb.rpc("my_teams");
+    S.teams = error ? [] : (data || []);
+    renderRail();
+  }
+  function openTeam(teamId) {
+    const t = S.teams.find((x) => x.team_id === teamId); if (!t) return;
+    S.viewing = { team: true, teamId: t.team_id, restaurantId: t.restaurant_id, name: t.team_name, ownerName: t.owner_name || t.owner_email };
+    S.view = "list"; S.sel = "all"; S.q = ""; S.cat = ""; S.loaded = false; S.recipes = []; S.restaurants = [];
+    render(); loadAll(); window.scrollTo(0, 0);
+  }
+  const inviteCode = () => randomToken(8).toUpperCase().replace(/[^A-Z2-9]/g, "X");
+
+  async function teamDialog(rest) {
+    modal(`<h3>Ομάδα κουζίνας</h3><div id="teamBox"><p>Φόρτωση…</p></div>`, async () => {
+      const box = $("teamBox");
+      const { data: rows, error } = await sb.from("teams").select("*").eq("restaurant_id", rest.id).eq("owner_id", S.user.id);
+      if (error) { box.innerHTML = `<p class="err">${esc(writeError(error))}</p>`; return; }
+      const team = rows && rows[0];
+      if (!team) {
+        box.innerHTML = `<p>Δώσε στην ομάδα σου στο «${esc(rest.name)}» πρόσβαση στις συνταγές αυτού του εστιατορίου. Βλέπουν μόνο αυτές, χωρίς τιμές και κόστος, και δεν μπορούν να τις αλλάξουν.</p>
+          <div class="form-actions"><button class="btn" data-act="close">Ακύρωση</button><button class="btn primary" id="teamCreate">Δημιουργία ομάδας</button></div>`;
+        $("teamCreate").addEventListener("click", async () => {
+          $("teamCreate").disabled = true;
+          try { check(await sb.from("teams").insert({ restaurant_id: rest.id, name: rest.name, invite_code: inviteCode() })); closeModal(); teamDialog(rest); }
+          catch (e) { $("teamCreate").disabled = false; toast(writeError(e)); }
+        });
+        return;
+      }
+      const link = `${appUrl()}?join=${team.invite_code}`;
+      const { data: members } = await sb.rpc("team_member_list", { tid: team.id });
+      box.innerHTML = `<p>Στείλε τον κωδικό ή τον σύνδεσμο στους μάγειρες της ομάδας σου. Αφού μπουν, βλέπουν τις συνταγές του «${esc(rest.name)}», μόνο για ανάγνωση.</p>
+        <div class="invite"><small>Κωδικός ομάδας</small><b id="inviteCode">${esc(team.invite_code)}</b></div>
+        <div class="form-actions" style="justify-content:flex-start">
+          <button class="btn primary" id="teamCopy">Αντιγραφή συνδέσμου</button>
+          ${navigator.share ? `<button class="btn" id="teamSend">Αποστολή…</button>` : ""}
+          <button class="btn ghost" id="teamNewCode">Νέος κωδικός</button>
+        </div>
+        <h4>Μέλη (${(members || []).length})</h4>
+        <div class="members">${(members || []).map((m) => `<div class="member"><span class="avatar sm initials">${esc(initials(m.full_name || m.email))}</span>
+          <span class="member-name"><b>${esc(m.full_name || m.email)}</b>${m.full_name ? `<small>${esc(m.email)}</small>` : ""}</span>
+          <button class="btn ghost" data-remove="${esc(m.user_id)}">Αφαίρεση</button></div>`).join("") || '<p class="hint">Δεν έχει μπει κανείς ακόμα.</p>'}</div>
+        <div class="form-actions"><button class="btn danger" id="teamEnd">Διάλυση ομάδας</button><button class="btn" data-act="close">Κλείσιμο</button></div>`;
+      $("teamCopy").addEventListener("click", () => copyText(link));
+      if ($("teamSend")) $("teamSend").addEventListener("click", () => navigator.share({ title: "Τετράδιο Κουζίνας", text: `Μπες στην ομάδα κουζίνας «${team.name}» με κωδικό ${team.invite_code}`, url: link }).catch(() => {}));
+      $("teamNewCode").addEventListener("click", async () => {
+        try { check(await sb.from("teams").update({ invite_code: inviteCode() }).eq("id", team.id)); toast("Ο παλιός κωδικός δεν ισχύει πια"); closeModal(); teamDialog(rest); } catch (e) { toast(writeError(e)); }
+      });
+      box.querySelectorAll("[data-remove]").forEach((b) => b.addEventListener("click", async () => {
+        try { check(await sb.from("team_members").delete().eq("team_id", team.id).eq("user_id", b.dataset.remove)); b.closest(".member").remove(); toast("Αφαιρέθηκε από την ομάδα"); } catch (e) { toast(writeError(e)); }
+      }));
+      $("teamEnd").addEventListener("click", () => {
+        confirmBox("Διάλυση ομάδας;", "Τα μέλη δεν θα βλέπουν πια τις συνταγές αυτού του εστιατορίου. Οι συνταγές σου μένουν όπως είναι.", "Διάλυση", async () => {
+          check(await sb.from("teams").delete().eq("id", team.id)); toast("Η ομάδα διαλύθηκε");
+        });
+      });
+    });
+  }
+
+  function joinDialog(code) {
+    toggleMenu(false);
+    modal(`<h3>Μπες σε ομάδα κουζίνας</h3>
+      <p>Γράψε τον κωδικό που σου έδωσε ο σεφ. Θα βλέπεις τις συνταγές του εστιατορίου του, μόνο για ανάγνωση.</p>
+      <form id="joinForm" style="display:flex;flex-direction:column;gap:12px" novalidate>
+        <label class="f">Κωδικός ομάδας<input id="joinCode" class="mono" autocomplete="off" autocapitalize="characters" value="${esc(code || "")}" placeholder="π.χ. K7QX2MPA"></label>
+        <div id="joinErr" class="err" hidden></div>
+        <div class="form-actions"><button type="button" class="btn" data-act="close">Ακύρωση</button><button class="btn primary" id="joinGo">Είσοδος</button></div>
+      </form>`, () => {
+      $("joinForm").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const err = $("joinErr"); err.hidden = true;
+        const c = $("joinCode").value.trim();
+        if (!c) { err.textContent = "Γράψε τον κωδικό."; err.hidden = false; return; }
+        $("joinGo").disabled = true;
+        const { data, error } = await sb.rpc("join_team", { code: c });
+        $("joinGo").disabled = false;
+        if (error || !data) { err.textContent = "Κάτι δεν πήγε καλά. Δοκίμασε ξανά."; err.hidden = false; return; }
+        if (!data.ok) { err.textContent = data.error === "own_team" ? "Αυτή είναι δική σου ομάδα." : "Δεν βρέθηκε ομάδα με αυτόν τον κωδικό. Έλεγξέ τον με τον σεφ."; err.hidden = false; return; }
+        closeModal(); await loadTeams(); toast(`Μπήκες στην ομάδα «${data.name}»`); openTeam(data.team_id);
+      });
+    });
+  }
+  async function leaveTeam() {
+    const v = S.viewing; if (!v || !v.team) return;
+    confirmBox("Αποχώρηση από την ομάδα;", `Δεν θα βλέπεις πια τις συνταγές της ομάδας «${v.name}».`, "Αποχώρηση", async () => {
+      check(await sb.from("team_members").delete().eq("team_id", v.teamId).eq("user_id", S.user.id));
+      S.viewing = null; S.view = "list"; S.loaded = false; await loadTeams(); render(); loadAll(); toast("Αποχώρησες από την ομάδα");
+    });
+  }
+
+  // ---------- order list ----------
+  function saveOrder() { try { localStorage.setItem("order-" + S.user.id, JSON.stringify(S.order)); } catch { /* ignore */ } }
+  function loadOrder() { try { S.order = JSON.parse(localStorage.getItem("order-" + S.user.id) || "{}") || {}; } catch { S.order = {}; } }
+  function orderLines() {
+    const buckets = new Map(), noQty = new Map();
+    let total = 0, priced = 0;
+    S.recipes.forEach((r) => {
+      const amount = S.order[r.id]; if (!(amount > 0)) return;
+      const factor = r.yieldQty ? amount / r.yieldQty : amount;
+      (r.ingredients || []).forEach((i) => {
+        const key = priceKey(i.name); if (!key) return;
+        const label = String(i.name).split(",")[0].trim();
+        if (i.qty == null) { if (!noQty.has(key)) noQty.set(key, label); return; }
+        const info = unitInfo(i.unit);
+        const bk = info ? `${key}|${info.dim}` : `${key}|u:${(i.unit || "").toLowerCase()}`;
+        const b = buckets.get(bk) || { label, dim: info ? info.dim : null, unit: i.unit || "", amount: 0, cost: 0, hasCost: true };
+        b.amount += info ? i.qty * factor * info.f : i.qty * factor;
+        const c = lineCost(i, factor);
+        if (c) b.cost += c.cost; else b.hasCost = false;
+        buckets.set(bk, b);
+      });
+    });
+    const lines = [...buckets.values()].sort((a, b) => a.label.localeCompare(b.label, "el")).map((b) => {
+      const f = b.dim ? fmtBase(b.dim, b.amount) : { q: nf(b.amount, b.amount >= 100 ? 0 : 2), u: b.unit };
+      if (b.hasCost) { total += b.cost; priced++; }
+      return { label: b.label, q: f.q, u: f.u, cost: b.hasCost ? b.cost : null };
+    });
+    return { lines, noQty: [...noQty.values()].sort((a, b) => a.localeCompare(b, "el")), total, priced };
+  }
+  function orderText() {
+    const { lines, noQty } = orderLines();
+    return ["Παραγγελία " + new Date().toLocaleDateString("el-GR"), ...lines.map((l) => `- ${l.q} ${l.u} ${l.label}`.replace(/\s+/g, " ")), ...noQty.map((n) => `- ${n}`)].join("\n");
+  }
+  function renderOrderResult() {
+    const box = $("orderResult"); if (!box) return;
+    const { lines, noQty, total, priced } = orderLines();
+    const chosen = S.recipes.filter((r) => S.order[r.id] > 0).length;
+    if (!chosen) { box.innerHTML = `<div class="empty"><h3>Διάλεξε συνταγές</h3>Τσέκαρε τα πιάτα και γράψε πόσες μερίδες θα φτιάξεις. Η λίστα αθροίζει τα υλικά όλων μαζί.</div>`; return; }
+    box.innerHTML = `<div class="sec-title"><span>Λίστα για ${chosen} ${chosen === 1 ? "συνταγή" : "συνταγές"}</span></div>
+      <table class="order"><tbody>${lines.map((l) => `<tr><td class="q">${esc(l.q)}<span>${esc(l.u)}</span></td><td>${esc(l.label)}</td><td class="c-cost">${l.cost != null ? euro(l.cost) : ""}</td></tr>`).join("")}
+      ${noQty.map((n) => `<tr><td class="q"><span>—</span></td><td>${esc(n)}</td><td></td></tr>`).join("")}</tbody></table>
+      ${priced ? `<div class="cost-sum"><div><small>Κόστος (υλικά με τιμή)</small><b>${euro(total)}</b></div></div>` : ""}
+      <div class="form-actions no-print" style="justify-content:flex-start">
+        <button class="btn primary" id="orderCopy">Αντιγραφή</button>
+        ${navigator.share ? `<button class="btn" id="orderSend">Αποστολή…</button>` : ""}
+        <button class="btn" id="orderPrint">Εκτύπωση</button>
+        <button class="btn ghost" id="orderClear">Καθαρισμός</button>
+      </div>`;
+    $("orderCopy").addEventListener("click", () => copyText(orderText()));
+    if ($("orderSend")) $("orderSend").addEventListener("click", () => navigator.share({ title: "Παραγγελία", text: orderText() }).catch(() => {}));
+    $("orderPrint").addEventListener("click", () => window.print());
+    $("orderClear").addEventListener("click", () => { S.order = {}; saveOrder(); renderOrder(); });
+  }
+  function renderOrder() {
+    if (!S.order) loadOrder();
+    const q = (S.orderQ || "").toLowerCase();
+    const list = S.recipes.filter((r) => !q || r.title.toLowerCase().includes(q));
+    main.innerHTML = `<div class="rest-head no-print"><div><h2>Λίστα παραγγελίας</h2><p>Διάλεξε πιάτα και μερίδες· τα υλικά αθροίζονται σε μία λίστα για τον προμηθευτή.</p></div>
+        <div class="sheet-actions"><button class="btn" data-act="back">← Πίσω στις συνταγές</button></div></div>
+      <div class="order-grid">
+        <section class="order-pick no-print">
+          <input type="search" class="field" id="orderQ" placeholder="Αναζήτηση πιάτου…" value="${esc(S.orderQ || "")}" aria-label="Αναζήτηση">
+          <div class="pick-list">${list.map((r) => {
+            const on = S.order[r.id] > 0;
+            const unit = r.yieldQty ? (r.yieldUnit || "μερίδες") : "φορές";
+            return `<div class="pick ${on ? "on" : ""}"><label><input type="checkbox" data-pick="${esc(r.id)}" ${on ? "checked" : ""}> <span>${esc(r.title)}</span></label>
+              <span class="pick-amt"><input type="number" min="0" step="any" inputmode="decimal" data-amt="${esc(r.id)}" value="${on ? esc(S.order[r.id]) : esc(r.yieldQty || 1)}" aria-label="Ποσότητα για ${esc(r.title)}"> <small>${esc(unit)}</small></span></div>`;
+          }).join("") || '<p class="hint">Δεν υπάρχουν συνταγές.</p>'}</div>
+        </section>
+        <section class="order-out" id="orderResult"></section>
+      </div>`;
+    renderOrderResult();
+    const qi = $("orderQ");
+    qi.addEventListener("input", () => { S.orderQ = qi.value; const pos = qi.selectionStart; renderOrder(); const n = $("orderQ"); n.focus(); n.setSelectionRange(pos, pos); });
+    main.querySelectorAll("[data-pick]").forEach((cb) => cb.addEventListener("change", () => {
+      const id = cb.dataset.pick, amt = parseFloat(main.querySelector(`[data-amt="${id}"]`).value.replace(",", "."));
+      if (cb.checked) S.order[id] = amt > 0 ? amt : 1; else delete S.order[id];
+      cb.closest(".pick").classList.toggle("on", cb.checked);
+      saveOrder(); renderOrderResult();
+    }));
+    main.querySelectorAll("[data-amt]").forEach((inp) => inp.addEventListener("input", () => {
+      const id = inp.dataset.amt, v = parseFloat(inp.value.replace(",", "."));
+      const cb = main.querySelector(`[data-pick="${id}"]`);
+      if (v > 0) { S.order[id] = v; cb.checked = true; cb.closest(".pick").classList.add("on"); } else { delete S.order[id]; cb.checked = false; cb.closest(".pick").classList.remove("on"); }
+      saveOrder(); renderOrderResult();
+    }));
+  }
+
   // ---------- menu: backup, import, install, logout ----------
   function toggleMenu(open) { $("menu").hidden = !open; $("menuBtn").setAttribute("aria-expanded", String(open)); }
   $("menuBtn").addEventListener("click", () => toggleMenu($("menu").hidden));
@@ -713,6 +1158,8 @@
 
   $("logoutBtn").addEventListener("click", async () => { toggleMenu(false); await sb.auth.signOut(); });
   $("profileBtn").addEventListener("click", () => profileDialog(false));
+  $("pricesBtn").addEventListener("click", pricesDialog);
+  $("joinBtn").addEventListener("click", () => joinDialog(""));
 
   // ---------- auth ----------
   let authMode = "login"; // login | signup | forgot | reset
@@ -778,7 +1225,9 @@
   function showApp() {
     $("authView").hidden = true; $("appView").hidden = false;
     $("whoEmail").textContent = (S.user && S.user.email) || "";
-    renderMenuButton(); render(); loadAll(); checkAdmin(); loadProfile();
+    renderMenuButton(); render(); loadAll(); checkAdmin(); loadProfile(); loadTeams();
+    let pending = null; try { pending = localStorage.getItem("pendingJoin"); localStorage.removeItem("pendingJoin"); } catch { /* ignore */ }
+    if (pending) setTimeout(() => joinDialog(pending), 600);
   }
 
   // ---------- owner / admin view ----------
@@ -899,6 +1348,11 @@
     const b = $("viewBanner");
     if (!S.viewing) { b.hidden = true; return; }
     b.hidden = false;
+    if (S.viewing.team) {
+      b.innerHTML = `<span>Ομάδα κουζίνας: <b>${esc(S.viewing.name)}</b> · σεφ ${esc(S.viewing.ownerName)} · μόνο ανάγνωση</span>
+        <span class="banner-actions"><button class="btn" data-act="my-notebook">Οι δικές μου συνταγές</button><button class="btn ghost" data-act="leave-team">Αποχώρηση</button></span>`;
+      return;
+    }
     b.innerHTML = `<span class="banner-who">${avatarHtml(S.viewing.avatar, S.viewing.name || S.viewing.email, "avatar sm")}<span>Συνταγές: <b>${esc(S.viewing.name || S.viewing.email)}</b> · μόνο ανάγνωση</span></span>
       <span class="banner-actions"><button class="btn" data-act="admin">← Όλοι οι μάγειρες</button><button class="btn ghost" data-act="my-notebook">Οι δικές μου συνταγές</button></span>`;
   }
@@ -939,11 +1393,20 @@
     main.innerHTML = head + stats + `<div class="chefs">${rows || '<div class="empty">Δεν υπάρχουν ακόμα μάγειρες.</div>'}</div>`;
   }
 
+  const params = new URLSearchParams(location.search);
+  const SHARE = params.get("share");
+  if (params.get("join")) {
+    try { localStorage.setItem("pendingJoin", params.get("join")); } catch { /* ignore */ }
+    history.replaceState(null, "", location.pathname);
+  }
+  if (SHARE) renderSharePage(SHARE);
+
   sb.auth.onAuthStateChange((event, session) => {
+    if (SHARE) return;
     if (event === "PASSWORD_RECOVERY") { S.user = session && session.user; showAuth("reset"); return; }
     const uid = session && session.user && session.user.id;
     if (uid && (!S.user || S.user.id !== uid)) {
-      S.user = session.user; S.restaurants = []; S.recipes = []; S.loaded = false; S.view = "list"; S.sel = "all"; S.viewing = null; S.isAdmin = false; S.chefs = null; S.profile = null; profilePrompted = false; $("adminBtn").hidden = true;
+      S.user = session.user; S.restaurants = []; S.recipes = []; S.loaded = false; S.view = "list"; S.sel = "all"; S.viewing = null; S.isAdmin = false; S.chefs = null; S.profile = null; profilePrompted = false; S.teams = []; S.order = null; S.prices = {}; $("adminBtn").hidden = true;
       if (authMode !== "reset" || $("authView").hidden) setTimeout(showApp, 0);
     } else if (!uid) {
       S.user = null; S.restaurants = []; S.recipes = []; S.loaded = false; S.viewing = null; S.isAdmin = false; S.chefs = null; S.profile = null; $("adminBtn").hidden = true;

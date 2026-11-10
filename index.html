@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Commissioner:wght@500;700;800&family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css?v=7">
+<link rel="stylesheet" href="styles.css?v=8">
 </head>
 <body>
 
@@ -53,6 +53,8 @@
         <div class="menu" id="menu" hidden>
           <div class="who" id="whoEmail"></div>
           <button id="profileBtn">Το προφίλ μου</button>
+          <button id="pricesBtn">Τιμές υλικών</button>
+          <button id="joinBtn">Μπες σε ομάδα κουζίνας</button>
           <button id="importRecipeMenu">Ανέβασμα συνταγής (φωτό, PDF, Word)</button>
           <button id="backupBtn">Αντίγραφο ασφαλείας (λήψη)</button>
           <label for="importFile">Εισαγωγή αντιγράφου…</label>
@@ -65,6 +67,7 @@
     <div class="top-actions">
       <button class="btn" id="adminBtn" data-act="admin" hidden>Διαχείριση</button>
       <button class="btn" id="importBtn">Ανέβασμα</button>
+      <button class="btn" id="orderBtn" data-act="order">Παραγγελία</button>
       <button class="btn primary" id="newRecipeBtn">+ Νέα συνταγή</button>
     </div>
   </header>
@@ -77,9 +80,15 @@
       <p class="rail-label">Εστιατόρια</p>
       <div class="rail" id="rail"></div>
       <button class="btn rail-add" id="addRestBtn">+ Προσθήκη εστιατορίου</button>
+      <div id="teamRail" class="team-rail" hidden><p class="rail-label">Ομάδες κουζίνας</p><div class="rail"></div></div>
     </aside>
     <main id="main"></main>
   </div>
+</div>
+
+<div class="wrap" id="shareView" hidden>
+  <header class="top"><div class="top-row"><div class="brand"><h1>Τετράδιο Κουζίνας</h1><span>Κοινοποιημένη συνταγή</span></div></div></header>
+  <div id="shareBox"></div>
 </div>
 
 <div class="wrap" id="setupView" hidden>
@@ -90,7 +99,7 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js?v=7"></script>
-<script src="app.js?v=7"></script>
+<script src="config.js?v=8"></script>
+<script src="app.js?v=8"></script>
 </body>
 </html>
