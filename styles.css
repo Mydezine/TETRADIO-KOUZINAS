@@ -327,3 +327,4 @@ body.readonly [data-act="share"], body.readonly [data-act="team"] { display: non
 .notif.unread { border-left-color: var(--accent); background: var(--accent-soft); }
 .notif small { color: var(--muted); font-size: .78rem; }
 .chef-main small.online { color: var(--accent); font-weight: 600; }
+.auth-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; }

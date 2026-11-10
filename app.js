@@ -7,7 +7,59 @@
 
   const S = { restaurants: [], recipes: [], sel: "all", q: "", cat: "", view: "list", id: null, scale: null, edit: null, loaded: false, user: null, isAdmin: false, viewing: null, chefs: null, profile: null, prices: {}, teams: [], order: null, orderQ: "", units: "orig", notifs: [], activity: {} };
   try { if (localStorage.getItem("units") === "metric") S.units = "metric"; } catch { /* ignore */ }
-  let LANG = "el", LOCALE = "el-GR";
+  // ---------- language (Greek interface, translated to English through i18n.js) ----------
+  let LANG = "el";
+  try { LANG = localStorage.getItem("lang") || "el"; } catch { /* ignore */ }
+  if (LANG !== "en" || !window.I18N_EN) LANG = "el";
+  const LOCALE = LANG === "en" ? "en-GB" : "el-GR";
+  document.documentElement.lang = LANG;
+  const GREEK = /[\u0370-\u03ff\u1f00-\u1fff]/;
+  function trCore(core) {
+    const d = window.I18N_EN;
+    if (Object.prototype.hasOwnProperty.call(d.exact, core)) return d.exact[core];
+    for (const [re, tpl] of d.patterns) {
+      const m = core.match(re);
+      if (!m) continue;
+      const out = tpl.replace(/\$(\d)/g, (_, i) => { const g = m[+i] || ""; return (GREEK.test(g) && trCore(g)) || g; });
+      if (out !== core) return out;
+    }
+    return null;
+  }
+  function trText(s) {
+    if (LANG !== "en" || !s || !GREEK.test(s)) return null;
+    const core = s.trim();
+    const r = trCore(core);
+    return r == null ? null : s.slice(0, s.indexOf(core)) + r + s.slice(s.indexOf(core) + core.length);
+  }
+  const tr = (s) => trText(s) ?? s;
+  function translateTree(root) {
+    if (LANG !== "en") return;
+    const skip = (el) => el && el.closest && el.closest("textarea, script, style, [translate=no]");
+    if (root.nodeType === 3) { if (!skip(root.parentElement)) { const t = trText(root.data); if (t != null && t !== root.data) root.data = t; } return; }
+    if (root.nodeType !== 1 || skip(root)) return;
+    const els = [root, ...root.querySelectorAll("[placeholder], [aria-label], [title]")];
+    els.forEach((el) => ["placeholder", "aria-label", "title"].forEach((a) => {
+      const v = el.getAttribute && el.getAttribute(a); const t = v && trText(v); if (t != null && t !== v) el.setAttribute(a, t);
+    }));
+    const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    for (let n = w.nextNode(); n; n = w.nextNode()) { if (skip(n.parentElement)) continue; const t = trText(n.data); if (t != null && t !== n.data) n.data = t; }
+  }
+  if (LANG === "en") {
+    translateTree(document.documentElement);
+    new MutationObserver((muts) => {
+      for (const m of muts) {
+        if (m.type === "characterData") translateTree(m.target);
+        else if (m.type === "attributes") translateTree(m.target);
+        else m.addedNodes.forEach((n) => translateTree(n));
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["placeholder", "aria-label", "title"] });
+  }
+  async function setLang(l) {
+    try { localStorage.setItem("lang", l); } catch { /* ignore */ }
+    LANG = l;
+    if (typeof syncPushLang === "function" && S.user) await syncPushLang();
+    location.reload();
+  }
   const $ = (id) => document.getElementById(id);
   const main = $("main");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -714,7 +766,7 @@
 
   // ---------- costing (food cost) ----------
   const priceKey = (name) => String(name || "").split(",")[0].trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ");
-  const euro = (n) => n == null || !isFinite(n) ? "—" : n.toLocaleString("el-GR", { style: "currency", currency: "EUR" });
+  const euro = (n) => n == null || !isFinite(n) ? "—" : n.toLocaleString(LOCALE, { style: "currency", currency: "EUR" });
   const PRICE_DIM = { kg: "m", l: "v", "τεμ": "c" };
   async function loadPrices(ownerId) {
     const { data, error } = await sb.from("ingredient_prices").select("*").eq("user_id", ownerId);
@@ -877,7 +929,7 @@
         if ($("shareMake")) $("shareMake").addEventListener("click", () => setToken(randomToken(24)));
         if ($("shareCopy")) $("shareCopy").addEventListener("click", () => copyText(link));
         if ($("shareLink")) $("shareLink").addEventListener("focus", (e) => e.target.select());
-        if ($("shareSend")) $("shareSend").addEventListener("click", () => navigator.share({ title: r.title, text: `Συνταγή: ${r.title}`, url: link }).catch(() => {}));
+        if ($("shareSend")) $("shareSend").addEventListener("click", () => navigator.share({ title: r.title, text: tr(`Συνταγή: ${r.title}`), url: link }).catch(() => {}));
         if ($("shareStop")) $("shareStop").addEventListener("click", async () => { await setToken(null); toast("Ο σύνδεσμος δεν λειτουργεί πια"); });
       });
     };
@@ -928,7 +980,7 @@
       if (sc) sc.addEventListener("change", () => { const v = parseFloat(sc.value.replace(",", ".")); target = v > 0 ? v : r.yieldQty; paint(); });
       box.querySelectorAll("[data-act=units]").forEach((b) => b.addEventListener("click", () => { setUnits(b.dataset.u); paint(); }));
     };
-    document.title = `${r.title} · Τετράδιο Κουζίνας`;
+    document.title = tr(`${r.title} · Τετράδιο Κουζίνας`);
     paint();
   }
   function setUnits(u) { S.units = u === "metric" ? "metric" : "orig"; try { localStorage.setItem("units", S.units); } catch { /* ignore */ } }
@@ -978,7 +1030,7 @@
           <button class="btn ghost" data-remove="${esc(m.user_id)}">Αφαίρεση</button></div>`).join("") || '<p class="hint">Δεν έχει μπει κανείς ακόμα.</p>'}</div>
         <div class="form-actions"><button class="btn danger" id="teamEnd">Διάλυση ομάδας</button><button class="btn" data-act="close">Κλείσιμο</button></div>`;
       $("teamCopy").addEventListener("click", () => copyText(link));
-      if ($("teamSend")) $("teamSend").addEventListener("click", () => navigator.share({ title: "Τετράδιο Κουζίνας", text: `Μπες στην ομάδα κουζίνας «${team.name}» με κωδικό ${team.invite_code}`, url: link }).catch(() => {}));
+      if ($("teamSend")) $("teamSend").addEventListener("click", () => navigator.share({ title: tr("Τετράδιο Κουζίνας"), text: tr(`Μπες στην ομάδα κουζίνας «${team.name}» με κωδικό ${team.invite_code}`), url: link }).catch(() => {}));
       $("teamNewCode").addEventListener("click", async () => {
         try { check(await sb.from("teams").update({ invite_code: inviteCode() }).eq("id", team.id)); toast("Ο παλιός κωδικός δεν ισχύει πια"); closeModal(); teamDialog(rest); } catch (e) { toast(writeError(e)); }
       });
@@ -1055,7 +1107,7 @@
   }
   function orderText() {
     const { lines, noQty } = orderLines();
-    return ["Παραγγελία " + new Date().toLocaleDateString("el-GR"), ...lines.map((l) => `- ${l.q} ${l.u} ${l.label}`.replace(/\s+/g, " ")), ...noQty.map((n) => `- ${n}`)].join("\n");
+    return [tr("Παραγγελία " + new Date().toLocaleDateString(LOCALE)), ...lines.map((l) => `- ${l.q} ${tr(l.u)} ${l.label}`.replace(/\s+/g, " ")), ...noQty.map((n) => `- ${n}`)].join("\n");
   }
   function renderOrderResult() {
     const box = $("orderResult"); if (!box) return;
@@ -1073,7 +1125,7 @@
         <button class="btn ghost" id="orderClear">Καθαρισμός</button>
       </div>`;
     $("orderCopy").addEventListener("click", () => copyText(orderText()));
-    if ($("orderSend")) $("orderSend").addEventListener("click", () => navigator.share({ title: "Παραγγελία", text: orderText() }).catch(() => {}));
+    if ($("orderSend")) $("orderSend").addEventListener("click", () => navigator.share({ title: tr("Παραγγελία"), text: orderText() }).catch(() => {}));
     $("orderPrint").addEventListener("click", () => window.print());
     $("orderClear").addEventListener("click", () => { S.order = {}; saveOrder(); renderOrder(); });
   }
@@ -1280,6 +1332,10 @@
 
   $("logoutBtn").addEventListener("click", async () => { toggleMenu(false); clearInterval(activityTimer); if (notifChannel) { sb.removeChannel(notifChannel); notifChannel = null; } await sb.auth.signOut(); });
   $("bellBtn").addEventListener("click", notifDialog);
+  $("langBtn").textContent = LANG === "en" ? "Ελληνικά" : "English";
+  $("langBtn").addEventListener("click", () => { toggleMenu(false); setLang(LANG === "en" ? "el" : "en"); });
+  $("authLang").textContent = LANG === "en" ? "Ελληνικά" : "English";
+  $("authLang").addEventListener("click", () => setLang(LANG === "en" ? "el" : "en"));
   $("profileBtn").addEventListener("click", () => profileDialog(false));
   $("pricesBtn").addEventListener("click", pricesDialog);
   $("joinBtn").addEventListener("click", () => joinDialog(""));
