@@ -5,7 +5,7 @@
   const ALLERGENS = ["Γλουτένη", "Καρκινοειδή", "Αυγά", "Ψάρια", "Αράπικα φιστίκια", "Σόγια", "Γάλα", "Ξηροί καρποί", "Σέλινο", "Μουστάρδα", "Σουσάμι", "Θειώδη", "Λούπινο", "Μαλάκια"];
   const UNITS = ["g", "gr", "γρ", "γρ.", "kg", "κιλό", "κιλά", "mg", "ml", "l", "lt", "λτ", "cl", "dl", "τεμ", "τεμ.", "τεμάχια", "κ.σ.", "κσ", "κ.γ.", "κγ", "φλ.", "φλιτζάνι", "φλιτζάνια", "πρέζα", "ματσάκι", "ματσάκια", "σκελίδα", "σκελίδες", "φύλλα", "κλωνάρια", "κλωνάρι", "φέτες", "φέτα", "oz", "lb", "tbsp", "tsp", "cup", "pcs"];
 
-  const S = { restaurants: [], recipes: [], sel: "all", q: "", cat: "", view: "list", id: null, scale: null, edit: null, loaded: false, user: null, isAdmin: false, viewing: null, chefs: null };
+  const S = { restaurants: [], recipes: [], sel: "all", q: "", cat: "", view: "list", id: null, scale: null, edit: null, loaded: false, user: null, isAdmin: false, viewing: null, chefs: null, profile: null };
   const $ = (id) => document.getElementById(id);
   const main = $("main");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -377,10 +377,12 @@
     const u = photoUrls[path];
     return `<img data-photo="${esc(path)}" alt="" loading="lazy" ${u ? `src="${esc(u.url)}"` : ""}>`;
   }
-  async function signPhotos() {
+  async function signPhotos(extra) {
     const now = Date.now();
-    const paths = [];
+    const paths = (extra || []).filter(Boolean);
     S.recipes.forEach((r) => { if (r.photoPath) paths.push(r.photoPath, thumbOf(r.photoPath)); });
+    if (S.profile && S.profile.avatar_path) paths.push(S.profile.avatar_path);
+    (S.chefs || []).forEach((c) => { if (c.avatar_path) paths.push(c.avatar_path); });
     const need = paths.filter((p) => !photoUrls[p] || now - photoUrls[p].at > 50 * 60 * 1000);
     if (!need.length) return;
     for (let i = 0; i < need.length; i += 100) {
@@ -710,6 +712,7 @@
   $("installBtn").addEventListener("click", async () => { toggleMenu(false); if (!installPrompt) return; installPrompt.prompt(); await installPrompt.userChoice; installPrompt = null; $("installBtn").hidden = true; });
 
   $("logoutBtn").addEventListener("click", async () => { toggleMenu(false); await sb.auth.signOut(); });
+  $("profileBtn").addEventListener("click", () => profileDialog(false));
 
   // ---------- auth ----------
   let authMode = "login"; // login | signup | forgot | reset
@@ -775,10 +778,118 @@
   function showApp() {
     $("authView").hidden = true; $("appView").hidden = false;
     $("whoEmail").textContent = (S.user && S.user.email) || "";
-    render(); loadAll(); checkAdmin();
+    renderMenuButton(); render(); loadAll(); checkAdmin(); loadProfile();
   }
 
   // ---------- owner / admin view ----------
+  // ---------- chef profile: name and photo ----------
+  const initials = (name) => (name || "?").trim().split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("") || "?";
+  function avatarHtml(path, name, cls) {
+    const u = path && photoUrls[path];
+    return path
+      ? `<span class="${cls}"><img data-photo="${esc(path)}" alt="" ${u ? `src="${esc(u.url)}"` : ""}></span>`
+      : `<span class="${cls} initials" aria-hidden="true">${esc(initials(name))}</span>`;
+  }
+  function renderMenuButton() {
+    const p = S.profile || {};
+    const name = p.full_name || "";
+    $("menuBtn").innerHTML = `${avatarHtml(p.avatar_path, name || (S.user && S.user.email), "avatar sm")}<span class="menu-name">${esc(name || "Μενού")}</span>`;
+    $("whoEmail").textContent = [name, S.user && S.user.email].filter(Boolean).join(" · ");
+  }
+  let profilePrompted = false;
+  async function loadProfile() {
+    const { data, error } = await sb.from("profiles").select("*").eq("user_id", S.user.id).maybeSingle();
+    if (error) return;
+    S.profile = data || null;
+    renderMenuButton();
+    if (S.profile && S.profile.avatar_path) signPhotos();
+    if (!S.profile && !profilePrompted) { profilePrompted = true; profileDialog(true); }
+  }
+
+  // Square crop for profile pictures.
+  async function squareImage(file, size) {
+    const big = await resizeImage(file, 1200, 0.9);
+    const img = await createImageBitmap(big);
+    const side = Math.min(img.width, img.height);
+    const c = document.createElement("canvas"); c.width = c.height = size;
+    c.getContext("2d").drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+    const blob = await new Promise((res) => c.toBlob(res, "image/jpeg", 0.88));
+    if (!blob) throw new Error("bad_image");
+    return blob;
+  }
+
+  function profileDialog(first) {
+    toggleMenu(false);
+    const p = S.profile || {};
+    let newPhoto = null, removePhoto = false;
+    modal(`<h3>${first ? "Καλώς ήρθες! Φτιάξε το προφίλ σου" : "Το προφίλ μου"}</h3>
+      ${first ? "<p>Βάλε το όνομά σου και, αν θέλεις, μια φωτογραφία σου.</p>" : ""}
+      <form id="profForm" style="display:flex;flex-direction:column;gap:14px" novalidate>
+        <div class="prof-photo">
+          <span id="profAvatar"></span>
+          <div class="photo-actions">
+            <label class="btn" for="profFile" id="profPick"></label>
+            <button type="button" class="btn ghost" id="profRemove">Αφαίρεση</button>
+            <input type="file" id="profFile" accept="image/*" hidden>
+            <span class="hint" id="profMsg"></span>
+          </div>
+        </div>
+        <label class="f">Ονοματεπώνυμο<input id="profName" autocomplete="name" value="${esc(p.full_name)}" placeholder="π.χ. Γιάννης Παπαδάκης"></label>
+        <p class="hint" style="margin:0">Λογαριασμός: ${esc(S.user.email)}</p>
+        <div id="profErr" class="err" hidden></div>
+        <div class="form-actions"><button type="button" class="btn" data-act="close">${first ? "Αργότερα" : "Ακύρωση"}</button><button class="btn primary" id="profSave">Αποθήκευση</button></div>
+      </form>`, () => {
+      const paint = () => {
+        const has = newPhoto || (!removePhoto && p.avatar_path);
+        const name = $("profName").value || S.user.email;
+        $("profAvatar").innerHTML = newPhoto
+          ? `<span class="avatar lg"><img src="${esc(newPhoto.preview)}" alt=""></span>`
+          : avatarHtml(removePhoto ? null : p.avatar_path, name, "avatar lg");
+        $("profPick").textContent = has ? "Αλλαγή φωτογραφίας" : "+ Φωτογραφία";
+        $("profRemove").hidden = !has;
+      };
+      paint();
+      $("profName").addEventListener("input", () => { if (!newPhoto && (removePhoto || !p.avatar_path)) paint(); });
+      $("profFile").addEventListener("change", async (ev) => {
+        const file = ev.target.files[0]; ev.target.value = "";
+        if (!file) return;
+        $("profMsg").textContent = "Επεξεργασία φωτογραφίας…";
+        try {
+          const blob = await squareImage(file, 512);
+          if (newPhoto) URL.revokeObjectURL(newPhoto.preview);
+          newPhoto = { blob, preview: URL.createObjectURL(blob) }; removePhoto = false;
+          $("profMsg").textContent = ""; paint();
+        } catch { $("profMsg").textContent = "Δεν άνοιξε η φωτογραφία. Δοκίμασε JPG ή PNG."; }
+      });
+      $("profRemove").addEventListener("click", () => {
+        if (newPhoto) { URL.revokeObjectURL(newPhoto.preview); newPhoto = null; } else removePhoto = true;
+        paint();
+      });
+      if (!first) $("profName").focus();
+      $("profForm").addEventListener("submit", async (ev) => {
+        ev.preventDefault();
+        const err = $("profErr"); err.hidden = true;
+        const full_name = $("profName").value.trim();
+        if (!full_name) { err.textContent = "Γράψε το όνομά σου."; err.hidden = false; return; }
+        $("profSave").disabled = true;
+        try {
+          let avatar_path = removePhoto ? null : (p.avatar_path || null);
+          if (newPhoto) {
+            avatar_path = `${S.user.id}/avatar/${Date.now()}.jpg`;
+            check(await sb.storage.from(BUCKET).upload(avatar_path, newPhoto.blob, { contentType: "image/jpeg", cacheControl: "31536000", upsert: false }));
+            photoUrls[avatar_path] = { url: newPhoto.preview, at: Date.now() };
+          }
+          const row = check(await sb.from("profiles").upsert({ user_id: S.user.id, full_name, avatar_path, updated_at: new Date().toISOString() }).select().single());
+          if (p.avatar_path && p.avatar_path !== avatar_path) sb.storage.from(BUCKET).remove([p.avatar_path]).catch(() => {});
+          S.profile = row;
+          if (S.chefs) { const me = S.chefs.find((c) => c.id === S.user.id); if (me) { me.full_name = full_name; me.avatar_path = avatar_path; } }
+          closeModal(); renderMenuButton(); render(); toast("Το προφίλ αποθηκεύτηκε");
+          setTimeout(() => signPhotos(), 1500);
+        } catch (e) { $("profSave").disabled = false; err.textContent = writeError(e); err.hidden = false; }
+      });
+    });
+  }
+
   async function checkAdmin() {
     const { data, error } = await sb.rpc("is_admin");
     S.isAdmin = !error && data === true;
@@ -788,21 +899,22 @@
     const b = $("viewBanner");
     if (!S.viewing) { b.hidden = true; return; }
     b.hidden = false;
-    b.innerHTML = `<span>Βλέπεις τις συνταγές του <b>${esc(S.viewing.email)}</b> · μόνο ανάγνωση</span>
+    b.innerHTML = `<span class="banner-who">${avatarHtml(S.viewing.avatar, S.viewing.name || S.viewing.email, "avatar sm")}<span>Συνταγές: <b>${esc(S.viewing.name || S.viewing.email)}</b> · μόνο ανάγνωση</span></span>
       <span class="banner-actions"><button class="btn" data-act="admin">← Όλοι οι μάγειρες</button><button class="btn ghost" data-act="my-notebook">Οι δικές μου συνταγές</button></span>`;
   }
   async function openAdmin() {
     S.viewing = null; S.view = "admin"; S.chefs = null; render(); window.scrollTo(0, 0);
-    const { data, error } = await sb.rpc("admin_chefs");
+    const { data, error } = await sb.rpc("admin_chef_list");
     if (error) { S.chefs = []; notice("Δεν φόρτωσε η λίστα μαγείρων. Ανανέωσε τη σελίδα."); }
     else S.chefs = data || [];
     if (S.view === "admin") renderAdmin();
+    signPhotos();
   }
   function openChef(id) {
     const chef = (S.chefs || []).find((c) => c.id === id);
     if (!chef) return;
     if (chef.id === S.user.id) { S.viewing = null; }
-    else S.viewing = { id: chef.id, email: chef.email };
+    else S.viewing = { id: chef.id, email: chef.email, name: chef.full_name, avatar: chef.avatar_path };
     S.view = "list"; S.sel = "all"; S.q = ""; S.cat = ""; S.loaded = false; S.recipes = []; S.restaurants = [];
     render(); loadAll(); window.scrollTo(0, 0);
   }
@@ -817,7 +929,9 @@
       <div class="fact"><small>Συνταγές</small><b>${tot.r}</b></div>
       <div class="fact"><small>Εστιατόρια</small><b>${tot.e}</b></div></div>`;
     const rows = S.chefs.map((c) => `<button class="chef" data-chef="${esc(c.id)}">
-        <span class="chef-main"><b>${esc(c.email)}</b>${c.id === S.user.id ? ' <span class="example">ΕΣΥ</span>' : ""}
+        ${avatarHtml(c.avatar_path, c.full_name || c.email, "avatar")}
+        <span class="chef-main"><b>${esc(c.full_name || c.email)}</b>${c.id === S.user.id ? ' <span class="example">ΕΣΥ</span>' : ""}
+          ${c.full_name ? `<small>${esc(c.email)}</small>` : ""}
           <small>Μέλος από ${esc(fmtDate(c.created_at))} · τελευταία σύνδεση ${esc(fmtDate(c.last_sign_in_at))}</small></span>
         <span class="chef-num"><b>${Number(c.recipes)}</b><small>συνταγές</small></span>
         <span class="chef-num"><b>${Number(c.restaurants)}</b><small>εστιατόρια</small></span>
@@ -829,10 +943,10 @@
     if (event === "PASSWORD_RECOVERY") { S.user = session && session.user; showAuth("reset"); return; }
     const uid = session && session.user && session.user.id;
     if (uid && (!S.user || S.user.id !== uid)) {
-      S.user = session.user; S.restaurants = []; S.recipes = []; S.loaded = false; S.view = "list"; S.sel = "all"; S.viewing = null; S.isAdmin = false; S.chefs = null; $("adminBtn").hidden = true;
+      S.user = session.user; S.restaurants = []; S.recipes = []; S.loaded = false; S.view = "list"; S.sel = "all"; S.viewing = null; S.isAdmin = false; S.chefs = null; S.profile = null; profilePrompted = false; $("adminBtn").hidden = true;
       if (authMode !== "reset" || $("authView").hidden) setTimeout(showApp, 0);
     } else if (!uid) {
-      S.user = null; S.restaurants = []; S.recipes = []; S.loaded = false; S.viewing = null; S.isAdmin = false; S.chefs = null; $("adminBtn").hidden = true;
+      S.user = null; S.restaurants = []; S.recipes = []; S.loaded = false; S.viewing = null; S.isAdmin = false; S.chefs = null; S.profile = null; $("adminBtn").hidden = true;
       showAuth("login");
     }
   });
