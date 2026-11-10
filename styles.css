@@ -368,6 +368,7 @@ body.readonly [data-act="share"], body.readonly [data-act="team"] { display: non
 .auth-top #authLang { align-self: flex-end; order: -1; }
 .logo-link { display: inline-block; }
 @media (prefers-color-scheme: dark) {
-  .logo { background: #fff; border-radius: 12px; padding: 4px 8px; }
+  /* No background: a soft light outline keeps the dark green readable on dark screens. */
+  .logo { filter: drop-shadow(0 0 1px rgba(255,255,255,.85)) drop-shadow(0 0 5px rgba(255,255,255,.18)); }
 }
 @media (max-width: 420px) { .logo { height: 64px; } .auth-top .logo { height: 96px; } }
