@@ -357,3 +357,5 @@ body.readonly [data-act="share"], body.readonly [data-act="team"] { display: non
 .comp-edit-head input { flex: 1; min-width: 0; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 8px 10px; font-weight: 600; }
 .comp-edit textarea { background: var(--surface) !important; }
 @media (max-width: 780px) { .comp-body { grid-template-columns: minmax(0, 1fr); } .components { padding: 16px; } }
+.sheet-body.one-col { grid-template-columns: minmax(0, 1fr); }
+.costing-off { border-top: 1px solid var(--line); padding: 10px 22px; }

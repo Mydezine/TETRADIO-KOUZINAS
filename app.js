@@ -271,7 +271,7 @@
           <button class="btn danger" data-act="del">Διαγραφή</button>
         </div>
       </div>
-      <div class="sheet-body">
+      <div class="sheet-body ${(r.steps || []).length || r.notes ? "" : "one-col"}">
         <section>
           <div class="sec-title"><span>Υλικά</span>
             ${base ? `<label class="scaler">Για <input id="scale" type="number" min="0" step="any" inputmode="decimal" value="${esc(target)}"> ${esc(r.yieldUnit || "")}
@@ -279,15 +279,14 @@
           </div>
           ${ings ? `<div class="units-row">${unitToggle()}</div><table class="ing ${scaled ? "scaled" : ""}"><tbody>${ings}</tbody></table>` : `<p class="sheet-sub">Δεν έχουν γραφτεί υλικά.</p>`}
         </section>
-        <section>
-          <div class="sec-title"><span>Εκτέλεση</span></div>
-          ${(r.steps || []).length ? `<ol class="steps">${r.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join("")}</ol>` : `<p class="sheet-sub">${(r.components || []).length ? "Η εκτέλεση είναι στις συνταγές συστατικών, παρακάτω." : "Δεν έχουν γραφτεί βήματα."}</p>`}
+        ${(r.steps || []).length || r.notes ? `<section>
+          ${(r.steps || []).length ? `<div class="sec-title"><span>Εκτέλεση</span></div><ol class="steps">${r.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join("")}</ol>` : ""}
           ${r.notes ? `<div class="ticket"><strong>Σημειώσεις σεφ</strong>${esc(r.notes)}</div>` : ""}
-        </section>
+        </section>` : ""}
       </div>
       ${componentsHtml(r)}
       ${platingHtml(r, r.platingPhotoPath ? photoImg(r.platingPhotoPath) : "")}
-      ${S.viewing && S.viewing.team ? "" : `<section class="costing" id="costBox">${costingHtml(r, factor, target)}</section>`}
+      ${S.viewing && S.viewing.team ? "" : costingOn() ? `<section class="costing" id="costBox">${costingHtml(r, factor, target)}</section>` : S.viewing ? "" : `<div class="costing-off"><button class="btn ghost" data-act="costing-on">+ Κοστολόγηση πιάτου</button></div>`}
     </article>`;
     const sc = $("scale");
     if (sc) sc.addEventListener("change", () => { const v = parseFloat(sc.value.replace(",", ".")); S.scale = v > 0 ? v : null; renderDetail(); });
@@ -324,8 +323,8 @@
       </div>
       <label class="f">Υλικά <span class="hint">Ένα ανά γραμμή: ποσότητα, μονάδα, υλικό. π.χ. «500 g αλεύρι» ή «2 τεμ αυγά». Έτσι υπολογίζονται αυτόματα οι ποσότητες για άλλες μερίδες.</span>
         <textarea id="f-ing" class="mono" rows="8" placeholder="320 g ρύζι carnaroli&#10;1 lt ζωμός λαχανικών&#10;80 g παρμεζάνα&#10;αλάτι, πιπέρι">${esc((e.ingredients || []).map(ingToLine).join("\n"))}</textarea></label>
-      <label class="f">Εκτέλεση <span class="hint">Ένα βήμα ανά γραμμή.</span>
-        <textarea id="f-steps" rows="7" placeholder="Σοτάρουμε το κρεμμύδι σε βούτυρο…">${esc((e.steps || []).join("\n"))}</textarea></label>
+      ${(e.steps || []).length ? `<label class="f">Εκτέλεση <span class="hint">Ένα βήμα ανά γραμμή. Αν το αδειάσεις, η ενότητα φεύγει από τη συνταγή.</span>
+        <textarea id="f-steps" rows="5">${esc(e.steps.join("\n"))}</textarea></label>` : ""}
       <fieldset class="comps-field"><legend>Συνταγές συστατικών</legend>
         <p class="hint" style="margin:0">Για συστατικά του πιάτου που φτιάχνονται χωριστά, π.χ. σάλτσες, γλάσα, πουρέδες. Αν το όνομα είναι ίδιο με ένα υλικό του πιάτου (π.χ. «45 g σάλτσα ταχίνι»), συνδέονται αυτόματα στην κοστολόγηση και στην παραγγελία.</p>
         <div id="compList">${(e.components || []).map(compEditHtml).join("")}</div>
@@ -382,7 +381,7 @@
       title, restaurantId: $("f-rest").value, category: $("f-cat").value,
       yieldQty: num("f-yq"), yieldUnit: $("f-yu").value.trim(), prepMin: num("f-prep"), cookMin: num("f-cook"),
       ingredients: parseIngredients($("f-ing").value),
-      steps: $("f-steps").value.split("\n").map((s) => s.trim()).filter(Boolean),
+      steps: $("f-steps") ? $("f-steps").value.split("\n").map((s) => s.trim()).filter(Boolean) : [],
       allergens: ALLERGENS.filter((_, i) => $("al-" + i).checked),
       notes: $("f-notes").value.trim(),
       plate: $("f-plate").value.trim(),
@@ -478,6 +477,7 @@
     const rest = S.restaurants.find((x) => x.id === S.sel);
     switch (t.dataset.act) {
       case "new": newRecipe(); break;
+      case "costing-on": setCosting(true); break;
       case "share": shareDialog(r); break;
       case "team": teamDialog(rest); break;
       case "import": importDialog(); break;
@@ -950,6 +950,18 @@
   const isPortions = (u) => /μερίδ|μεριδ|άτομ|ατομ|πιάτ|πιατ|portion|serving|plate|τεμ/i.test(u || "");
   function guessPriceUnit(i) { const info = unitInfo(i.unit); return info ? (info.dim === "v" ? "l" : info.dim === "c" ? "τεμ" : "kg") : (i.unit ? "kg" : "τεμ"); }
 
+  const costingOn = () => !!(S.profile && S.profile.show_costing);
+  async function setCosting(on) {
+    try {
+      const row = check(await sb.from("profiles").upsert({ user_id: S.user.id, show_costing: on, updated_at: new Date().toISOString() }).select().single());
+      S.profile = row; applyCostingUi(); render();
+      toast(on ? "Η κοστολόγηση ενεργοποιήθηκε" : "Η κοστολόγηση απενεργοποιήθηκε");
+    } catch (e) { toast(writeError(e)); }
+  }
+  function applyCostingUi() {
+    $("pricesBtn").hidden = !costingOn();
+    $("costingBtn").textContent = costingOn() ? "Απενεργοποίηση κοστολόγησης" : "Ενεργοποίηση κοστολόγησης";
+  }
   function costingHtml(r, factor, target) {
     const ro = !!S.viewing;
     let total = 0, missing = 0, approx = false;
@@ -1157,9 +1169,8 @@
             ${r.yieldQty ? `<label class="scaler">Για <input id="scale" type="number" min="0" step="any" inputmode="decimal" value="${esc(target)}"> ${esc(r.yieldUnit || "")}</label>` : ""}</div>
             <div class="units-row">${unitToggle()}</div>
             ${ings ? `<table class="ing"><tbody>${ings}</tbody></table>` : ""}</section>
-          <section><div class="sec-title"><span>Εκτέλεση</span></div>
-            ${r.steps.length ? `<ol class="steps">${r.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join("")}</ol>` : ""}
-            ${r.notes ? `<div class="ticket"><strong>Σημειώσεις σεφ</strong>${esc(r.notes)}</div>` : ""}</section>
+          ${r.steps.length || r.notes ? `<section>${r.steps.length ? `<div class="sec-title"><span>Εκτέλεση</span></div><ol class="steps">${r.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join("")}</ol>` : ""}
+            ${r.notes ? `<div class="ticket"><strong>Σημειώσεις σεφ</strong>${esc(r.notes)}</div>` : ""}</section>` : ""}
         </div>
         ${componentsHtml(r)}
         ${platingHtml(r, platingUrl ? `<img src="${esc(platingUrl)}" alt="">` : "")}</article>
@@ -1309,9 +1320,9 @@
     const chosen = S.recipes.filter((r) => S.order[r.id] > 0).length;
     if (!chosen) { box.innerHTML = `<div class="empty"><h3>Διάλεξε συνταγές</h3>Τσέκαρε τα πιάτα και γράψε πόσες μερίδες θα φτιάξεις. Η λίστα αθροίζει τα υλικά όλων μαζί.</div>`; return; }
     box.innerHTML = `<div class="sec-title"><span>Λίστα για ${chosen} ${chosen === 1 ? "συνταγή" : "συνταγές"}</span></div>
-      <table class="order"><tbody>${lines.map((l) => `<tr><td class="q">${esc(l.q)}<span>${esc(l.u)}</span></td><td>${esc(l.label)}</td><td class="c-cost">${l.cost != null ? euro(l.cost) : ""}</td></tr>`).join("")}
+      <table class="order"><tbody>${lines.map((l) => `<tr><td class="q">${esc(l.q)}<span>${esc(l.u)}</span></td><td>${esc(l.label)}</td><td class="c-cost">${costingOn() && l.cost != null ? euro(l.cost) : ""}</td></tr>`).join("")}
       ${noQty.map((n) => `<tr><td class="q"><span>—</span></td><td>${esc(n)}</td><td></td></tr>`).join("")}</tbody></table>
-      ${priced ? `<div class="cost-sum"><div><small>Κόστος (υλικά με τιμή)</small><b>${euro(total)}</b></div></div>` : ""}
+      ${priced && costingOn() ? `<div class="cost-sum"><div><small>Κόστος (υλικά με τιμή)</small><b>${euro(total)}</b></div></div>` : ""}
       <div class="form-actions no-print" style="justify-content:flex-start">
         <button class="btn primary" id="orderCopy">Αντιγραφή</button>
         ${navigator.share ? `<button class="btn" id="orderSend">Αποστολή…</button>` : ""}
@@ -1532,6 +1543,7 @@
   $("authLang").addEventListener("click", () => setLang(LANG === "en" ? "el" : "en"));
   $("profileBtn").addEventListener("click", () => profileDialog(false));
   $("pricesBtn").addEventListener("click", pricesDialog);
+  $("costingBtn").addEventListener("click", () => { toggleMenu(false); setCosting(!costingOn()); });
   $("joinBtn").addEventListener("click", () => joinDialog(""));
 
   // ---------- auth ----------
@@ -1623,7 +1635,8 @@
     const { data, error } = await sb.from("profiles").select("*").eq("user_id", S.user.id).maybeSingle();
     if (error) return;
     S.profile = data || null;
-    renderMenuButton();
+    renderMenuButton(); applyCostingUi();
+    if (S.view === "detail") renderDetail();
     if (S.profile && S.profile.avatar_path) signPhotos();
     if (!S.profile && !profilePrompted) { profilePrompted = true; profileDialog(true); }
   }

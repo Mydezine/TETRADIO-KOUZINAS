@@ -324,6 +324,12 @@ window.I18N_EN = {
     "190 g ταχίνι\n40 g σόγια\n60 g χυμός λάιμ": "190 g tahini\n40 g soy sauce\n60 g lime juice",
     "Χτυπάμε όλα τα υλικά στο thermomix": "Blend everything in the Thermomix",
     "συνταγή ↓": "recipe ↓",
+    "Ένα βήμα ανά γραμμή. Αν το αδειάσεις, η ενότητα φεύγει από τη συνταγή.": "One step per line. Empty it to remove this section from the recipe.",
+    "+ Κοστολόγηση πιάτου": "+ Dish costing",
+    "Ενεργοποίηση κοστολόγησης": "Turn on costing",
+    "Απενεργοποίηση κοστολόγησης": "Turn off costing",
+    "Η κοστολόγηση ενεργοποιήθηκε": "Costing turned on",
+    "Η κοστολόγηση απενεργοποιήθηκε": "Costing turned off",
     "Η εκτέλεση είναι στις συνταγές συστατικών, παρακάτω.": "The method is in the component recipes below.",
     "πιάτο": "plate",
 

@@ -37,3 +37,6 @@ begin
     from auth.users u left join public.profiles p on p.user_id = u.id
     order by u.created_at;
 end $$;
+
+-- Κοστολόγηση: εμφανίζεται μόνο σε όποιον μάγειρα την ενεργοποιήσει.
+alter table public.profiles add column if not exists show_costing boolean not null default false;
