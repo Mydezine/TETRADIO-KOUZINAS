@@ -1,6 +1,6 @@
 // Keeps the app shell available offline. Recipes themselves always come from Supabase.
-const CACHE = "tetradio-v14";
-const SHELL = ["./", "index.html", "styles.css?v=14", "app.js?v=14", "config.js?v=14", "i18n.js?v=14", "manifest.webmanifest", "logo.png?v=14", "icons/icon-192.png", "icons/apple-touch-icon.png",
+const CACHE = "tetradio-v15";
+const SHELL = ["./", "index.html", "styles.css?v=15", "app.js?v=15", "config.js?v=15", "i18n.js?v=15", "manifest.webmanifest", "logo.png?v=15", "icons/icon-192.png", "icons/apple-touch-icon.png",
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"];
 
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });

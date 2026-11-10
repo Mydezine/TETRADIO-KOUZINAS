@@ -362,10 +362,12 @@ body.readonly [data-act="share"], body.readonly [data-act="team"] { display: non
 
 /* Logo */
 .logo-h { margin: 0; line-height: 0; }
-.logo { height: 58px; width: auto; max-width: 100%; display: block; }
-.auth-top .logo { height: 80px; }
+.logo { height: 84px; width: auto; max-width: 100%; display: block; }
+.auth-top .logo { height: 110px; }
+.auth-top { flex-direction: column; align-items: center; gap: 6px; }
+.auth-top #authLang { align-self: flex-end; order: -1; }
 .logo-link { display: inline-block; }
 @media (prefers-color-scheme: dark) {
   .logo { background: #fff; border-radius: 12px; padding: 4px 8px; }
 }
-@media (max-width: 420px) { .logo { height: 48px; } .auth-top .logo { height: 64px; } }
+@media (max-width: 420px) { .logo { height: 64px; } .auth-top .logo { height: 96px; } }
