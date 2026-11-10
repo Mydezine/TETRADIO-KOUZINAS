@@ -15,17 +15,18 @@ revoke execute on function public.is_admin() from public, anon;
 grant execute on function public.is_admin() to authenticated;
 
 -- Ανάγνωση όλων για τον διαχειριστή (οι αλλαγές μένουν μόνο στον κάθε μάγειρα).
-drop policy if exists "admin reads restaurants" on public.restaurants;
-create policy "admin reads restaurants" on public.restaurants
-  for select to authenticated using ((select public.is_admin()));
-
-drop policy if exists "admin reads recipes" on public.recipes;
-create policy "admin reads recipes" on public.recipes
-  for select to authenticated using ((select public.is_admin()));
-
-drop policy if exists "admin reads recipe photos" on storage.objects;
-create policy "admin reads recipe photos" on storage.objects
-  for select to authenticated using (bucket_id = 'recipe-photos' and (select public.is_admin()));
+do $$
+begin
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'restaurants' and policyname = 'admin reads restaurants') then
+    create policy "admin reads restaurants" on public.restaurants for select to authenticated using ((select public.is_admin()));
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'recipes' and policyname = 'admin reads recipes') then
+    create policy "admin reads recipes" on public.recipes for select to authenticated using ((select public.is_admin()));
+  end if;
+  if not exists (select 1 from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname = 'admin reads recipe photos') then
+    create policy "admin reads recipe photos" on storage.objects for select to authenticated using (bucket_id = 'recipe-photos' and (select public.is_admin()));
+  end if;
+end $$;
 
 -- Λίστα μαγείρων με στοιχεία, μόνο για τον διαχειριστή.
 create or replace function public.admin_chefs()
