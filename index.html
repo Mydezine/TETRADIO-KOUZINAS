@@ -15,7 +15,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Commissioner:wght@500;700;800&family=Inter:wght@400;500;600&family=Roboto+Mono:wght@400;500&display=swap">
-<link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="styles.css?v=7">
 </head>
 <body>
 
@@ -43,16 +43,13 @@
 <!-- App -->
 <div class="wrap" id="appView" hidden>
   <header class="top">
-    <div class="brand">
-      <h1>Τετράδιο Κουζίνας</h1>
-      <span>Οι συνταγές μου, ανά εστιατόριο</span>
-    </div>
-    <div class="top-actions">
-      <button class="btn" id="adminBtn" data-act="admin" hidden>Διαχείριση</button>
-      <button class="btn" id="importBtn">Ανέβασμα</button>
-      <button class="btn primary" id="newRecipeBtn">+ Νέα συνταγή</button>
+    <div class="top-row">
+      <div class="brand">
+        <h1>Τετράδιο Κουζίνας</h1>
+        <span>Οι συνταγές μου, ανά εστιατόριο</span>
+      </div>
       <div class="menu-wrap">
-        <button class="btn" id="menuBtn" aria-haspopup="true" aria-expanded="false">Μενού</button>
+        <button class="profile-btn" id="menuBtn" aria-haspopup="true" aria-expanded="false" aria-label="Προφίλ και μενού"></button>
         <div class="menu" id="menu" hidden>
           <div class="who" id="whoEmail"></div>
           <button id="profileBtn">Το προφίλ μου</button>
@@ -64,6 +61,11 @@
         </div>
         <input type="file" id="importFile" accept="application/json,.json" hidden>
       </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn" id="adminBtn" data-act="admin" hidden>Διαχείριση</button>
+      <button class="btn" id="importBtn">Ανέβασμα</button>
+      <button class="btn primary" id="newRecipeBtn">+ Νέα συνταγή</button>
     </div>
   </header>
 
@@ -88,7 +90,7 @@
 <div id="toast" class="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
-<script src="config.js"></script>
-<script src="app.js"></script>
+<script src="config.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

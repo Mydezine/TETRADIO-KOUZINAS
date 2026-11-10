@@ -793,7 +793,7 @@
   function renderMenuButton() {
     const p = S.profile || {};
     const name = p.full_name || "";
-    $("menuBtn").innerHTML = `${avatarHtml(p.avatar_path, name || (S.user && S.user.email), "avatar sm")}<span class="menu-name">${esc(name || "Μενού")}</span>`;
+    $("menuBtn").innerHTML = `<span class="menu-name">${esc(name || "Το προφίλ μου")}</span>${avatarHtml(p.avatar_path, name || (S.user && S.user.email), "avatar md")}`;
     $("whoEmail").textContent = [name, S.user && S.user.email].filter(Boolean).join(" · ");
   }
   let profilePrompted = false;
