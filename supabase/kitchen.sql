@@ -204,3 +204,22 @@ as $$
         or (r.plating_photo_path is not null and r.plating_photo_path = obj))
       and (r.share_token is not null or (r.restaurant_id is not null and public.team_can_read_restaurant(r.restaurant_id))))
 $$;
+
+-- ---------- Συνταγές συστατικών (π.χ. σάλτσες, γλάσα μέσα σε ένα πιάτο) ----------
+alter table public.recipes add column if not exists components jsonb not null default '[]'::jsonb;
+
+create or replace function public.get_shared_recipe(tok text)
+returns json language sql stable security definer set search_path = ''
+as $$
+  select json_build_object(
+    'title', r.title, 'category', r.category, 'yield_qty', r.yield_qty, 'yield_unit', r.yield_unit,
+    'prep_min', r.prep_min, 'cook_min', r.cook_min, 'ingredients', r.ingredients, 'steps', r.steps,
+    'allergens', r.allergens, 'notes', r.notes, 'photo_path', r.photo_path,
+    'plate', r.plate, 'plating_steps', r.plating_steps, 'plating_photo_path', r.plating_photo_path,
+    'components', r.components,
+    'chef_name', coalesce(p.full_name, ''), 'restaurant', coalesce(rs.name, ''))
+  from public.recipes r
+  left join public.profiles p on p.user_id = r.user_id
+  left join public.restaurants rs on rs.id = r.restaurant_id
+  where tok is not null and length(tok) >= 16 and r.share_token = tok
+$$;

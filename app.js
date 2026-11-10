@@ -81,13 +81,14 @@
     yieldQty: r.yield_qty != null ? Number(r.yield_qty) : null, yieldUnit: r.yield_unit, prepMin: r.prep_min, cookMin: r.cook_min,
     ingredients: r.ingredients || [], steps: r.steps || [], allergens: r.allergens || [], notes: r.notes || "", createdAt: r.created_at,
     plate: r.plate || "", platingSteps: r.plating_steps || [], platingPhotoPath: r.plating_photo_path || null,
+    components: Array.isArray(r.components) ? r.components : [],
     photoPath: r.photo_path || null, sellPrice: r.sell_price != null ? Number(r.sell_price) : null, shareToken: r.share_token || null,
   });
   const toRec = (d) => ({
     restaurant_id: d.restaurantId || null, title: d.title, category: d.category || "Άλλο",
     yield_qty: d.yieldQty ?? null, yield_unit: d.yieldUnit || "", prep_min: d.prepMin != null ? Math.round(d.prepMin) : null, cook_min: d.cookMin != null ? Math.round(d.cookMin) : null,
     ingredients: d.ingredients || [], steps: d.steps || [], allergens: d.allergens || [], notes: d.notes || "", updated_at: new Date().toISOString(),
-    plate: d.plate || "", plating_steps: d.platingSteps || [],
+    plate: d.plate || "", plating_steps: d.platingSteps || [], components: d.components || [],
   });
 
   async function loadAll() {
@@ -116,7 +117,7 @@
     const n = Number(s); return isFinite(n) ? n : null;
   }
   function parseIngredients(text) {
-    return text.split("\n").map((l) => l.trim()).filter(Boolean).map((line) => {
+    return text.split("\n").map((l) => l.trim().replace(/^[-•*·▪●]\s*/, "")).filter(Boolean).map((line) => {
       const m = line.match(/^(\d+(?:[.,]\d+)?(?:\/\d+)?|[½¼¾])\s*(.*)$/);
       if (!m) return { qty: null, unit: "", name: line };
       const qty = parseQty(m[1]);
@@ -203,6 +204,25 @@
     $("cat").addEventListener("change", (e) => { S.cat = e.target.value; renderList(); });
   }
 
+  // Component recipes shown under the main recipe (as written, not scaled).
+  function componentsHtml(r) {
+    const comps = (r.components || []).filter((c) => c.name || (c.ingredients || []).length || (c.steps || []).length);
+    if (!comps.length) return "";
+    return `<section class="components">
+      <div class="sec-title"><span>Συνταγές συστατικών</span></div>
+      ${comps.map((c) => {
+        const st = compStats(c);
+        const ings = (c.ingredients || []).map((i) => { const f = showQty(i.qty, i.unit); return `<tr><td class="q">${esc(f.q)}<span>${esc(f.u)}</span></td><td>${esc(i.name)}</td></tr>`; }).join("");
+        return `<div class="comp" id="comp-${esc(priceKey(c.name).replace(/\s+/g, "-"))}">
+          <h3>${esc(c.name || "")}${st.weight ? ` <small>Παρτίδα ≈ ${esc(fmtBase("m", st.weight).q)} ${esc(fmtBase("m", st.weight).u)}</small>` : ""}</h3>
+          <div class="comp-body">
+            <div>${ings ? `<table class="ing"><tbody>${ings}</tbody></table>` : ""}</div>
+            <div>${(c.steps || []).length ? `<ol class="steps">${c.steps.map((x) => `<li><span>${esc(x)}</span></li>`).join("")}</ol>` : ""}</div>
+          </div></div>`;
+      }).join("")}
+    </section>`;
+  }
+
   // "Στήσιμο πιάτου": serving plate, plating steps and a reference photo.
   function platingHtml(r, photoHtml) {
     const steps = r.platingSteps || [];
@@ -228,7 +248,7 @@
     const scaled = Math.abs(factor - 1) > 1e-9;
     const ings = (r.ingredients || []).map((i) => {
       const f = showQty(i.qty != null ? i.qty * factor : null, i.unit);
-      return `<tr><td class="q">${esc(f.q)}<span>${esc(f.u)}</span></td><td>${esc(i.name)}</td></tr>`;
+      return `<tr><td class="q">${esc(f.q)}<span>${esc(f.u)}</span></td><td>${esc(i.name)}${findComp(r, i.name) ? ' <span class="comp-ref">συνταγή ↓</span>' : ""}</td></tr>`;
     }).join("");
     const facts = [
       ["Εστιατόριο", restName(r.restaurantId)],
@@ -261,16 +281,26 @@
         </section>
         <section>
           <div class="sec-title"><span>Εκτέλεση</span></div>
-          ${(r.steps || []).length ? `<ol class="steps">${r.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join("")}</ol>` : `<p class="sheet-sub">Δεν έχουν γραφτεί βήματα.</p>`}
+          ${(r.steps || []).length ? `<ol class="steps">${r.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join("")}</ol>` : `<p class="sheet-sub">${(r.components || []).length ? "Η εκτέλεση είναι στις συνταγές συστατικών, παρακάτω." : "Δεν έχουν γραφτεί βήματα."}</p>`}
           ${r.notes ? `<div class="ticket"><strong>Σημειώσεις σεφ</strong>${esc(r.notes)}</div>` : ""}
         </section>
       </div>
+      ${componentsHtml(r)}
       ${platingHtml(r, r.platingPhotoPath ? photoImg(r.platingPhotoPath) : "")}
       ${S.viewing && S.viewing.team ? "" : `<section class="costing" id="costBox">${costingHtml(r, factor, target)}</section>`}
     </article>`;
     const sc = $("scale");
     if (sc) sc.addEventListener("change", () => { const v = parseFloat(sc.value.replace(",", ".")); S.scale = v > 0 ? v : null; renderDetail(); });
     wireCosting(r, factor, target);
+  }
+
+  function compEditHtml(c) {
+    return `<div class="comp-edit">
+      <div class="comp-edit-head"><input class="comp-name" value="${esc(c.name || "")}" placeholder="π.χ. Σάλτσα ταχίνι" aria-label="Όνομα συστατικού">
+        <button type="button" class="btn ghost" data-comp-rm="1">Αφαίρεση</button></div>
+      <label class="f">Υλικά<textarea class="comp-ings mono" rows="5" placeholder="190 g ταχίνι&#10;40 g σόγια&#10;60 g χυμός λάιμ">${esc((c.ingredients || []).map(ingToLine).join("\n"))}</textarea></label>
+      <label class="f">Εκτέλεση<textarea class="comp-steps" rows="3" placeholder="Χτυπάμε όλα τα υλικά στο thermomix">${esc((c.steps || []).join("\n"))}</textarea></label>
+    </div>`;
   }
 
   function renderForm() {
@@ -296,6 +326,11 @@
         <textarea id="f-ing" class="mono" rows="8" placeholder="320 g ρύζι carnaroli&#10;1 lt ζωμός λαχανικών&#10;80 g παρμεζάνα&#10;αλάτι, πιπέρι">${esc((e.ingredients || []).map(ingToLine).join("\n"))}</textarea></label>
       <label class="f">Εκτέλεση <span class="hint">Ένα βήμα ανά γραμμή.</span>
         <textarea id="f-steps" rows="7" placeholder="Σοτάρουμε το κρεμμύδι σε βούτυρο…">${esc((e.steps || []).join("\n"))}</textarea></label>
+      <fieldset class="comps-field"><legend>Συνταγές συστατικών</legend>
+        <p class="hint" style="margin:0">Για συστατικά του πιάτου που φτιάχνονται χωριστά, π.χ. σάλτσες, γλάσα, πουρέδες. Αν το όνομα είναι ίδιο με ένα υλικό του πιάτου (π.χ. «45 g σάλτσα ταχίνι»), συνδέονται αυτόματα στην κοστολόγηση και στην παραγγελία.</p>
+        <div id="compList">${(e.components || []).map(compEditHtml).join("")}</div>
+        <button type="button" class="btn" id="compAdd">+ Προσθήκη συνταγής συστατικού</button>
+      </fieldset>
       <fieldset><legend>Αλλεργιογόνα</legend><div class="checks">${ALLERGENS.map((a, i) => `<label><input type="checkbox" id="al-${i}" value="${esc(a)}" ${(e.allergens || []).includes(a) ? "checked" : ""}> ${esc(a)}</label>`).join("")}</div></fieldset>
       <label class="f">Σημειώσεις σεφ <span class="hint">Μυστικά, πλέιτινγκ, συντήρηση, προμηθευτές.</span>
         <textarea id="f-notes" rows="3">${esc(e.notes)}</textarea></label>
@@ -313,6 +348,8 @@
     </form>`;
     $("recForm").addEventListener("submit", saveRecipe);
     renderPhotoBox(); renderPlatingBox();
+    $("compAdd").addEventListener("click", () => { $("compList").insertAdjacentHTML("beforeend", compEditHtml({})); const all = $("compList").querySelectorAll(".comp-name"); all[all.length - 1].focus(); });
+    $("compList").addEventListener("click", (ev) => { const b = ev.target.closest("[data-comp-rm]"); if (b) b.closest(".comp-edit").remove(); });
     if (!e.title) $("f-title").focus();
   }
 
@@ -350,6 +387,11 @@
       notes: $("f-notes").value.trim(),
       plate: $("f-plate").value.trim(),
       platingSteps: $("f-plating").value.split("\n").map((x) => x.trim()).filter(Boolean),
+      components: [...document.querySelectorAll("#compList .comp-edit")].map((el) => ({
+        name: el.querySelector(".comp-name").value.trim(),
+        ingredients: parseIngredients(el.querySelector(".comp-ings").value),
+        steps: el.querySelector(".comp-steps").value.split("\n").map((x) => x.trim()).filter(Boolean),
+      })).filter((c) => c.name || c.ingredients.length || c.steps.length),
     };
     const btn = $("f-save"); btn.disabled = true; btn.textContent = "Αποθήκευση…";
     try {
@@ -650,34 +692,52 @@
 
   // Free, offline fallback for plain text: finds title, ingredients, steps and notes by their headings.
   function parseRecipeText(text) {
-    const lines = text.split(/\r?\n/).map((l) => l.trim());
-    const head = (l, words) => new RegExp(`^(${words})(?=[\\s:.]|$)[^\\n]{0,30}$`, "iu").test(l.replace(/[*#_]/g, "").trim());
+    const lines = text.split(/\r?\n/).map((l) => l.trim().replace(/^[-•*·▪●]\s*/, "")).filter(Boolean);
+    const clean = (l) => l.replace(/[*#_]/g, "").trim();
+    const head = (l, words) => new RegExp(`^(${words})(?=[\\s:.]|$)[^\\n]{0,30}$`, "iu").test(clean(l));
     const ING = "υλικά|υλικα|συστατικά|συστατικα|ingredients";
     const STEP = "εκτέλεση|εκτελεση|οδηγίες|οδηγιες|τρόπος|τροπος|παρασκευή|παρασκευη|διαδικασία|διαδικασια|method|directions|instructions|preparation|steps";
     const NOTE = "σημειώσεις|σημειωσεις|σημείωση|σημειωση|tips|notes|μυστικά|μυστικα";
     const PLATE = "στήσιμο|στησιμο|πλέιτινγκ|πλειτινγκ|σερβίρισμα|σερβιρισμα|plating|presentation";
-    const plating = [];
-    let title = "", section = "", ings = [], steps = [], notes = [], yieldQty = null, yieldUnit = "μερίδες";
-    for (const raw of lines) {
-      if (!raw) continue;
-      const l = raw.replace(/^[-•*·▪●]\s*/, "");
+    const COMP = "συνταγές|συνταγες|συνταγές συστατικών|συνταγες συστατικων|βάσεις|βασεις|sub-recipes|subrecipes|recipes|components|mise en place";
+    const isIng = (l) => /^(\d|[½¼¾])/.test(l) && l.length < 80;
+    const nextIsIng = (k) => k + 1 < lines.length && isIng(lines[k + 1]);
+    const looksLikeName = (l, k) => l.length <= 45 && !/[.!;:,]$/.test(l) && !isIng(l) && nextIsIng(k);
+    const strip = (l) => l.replace(/^(\d+|[α-ω])[.)]\s*/i, "");
+    let title = "", section = "", yieldQty = null, yieldUnit = "μερίδες";
+    const ings = [], steps = [], notes = [], plating = [], comps = [];
+    let cur = null, inComps = false;
+    lines.forEach((l, k) => {
+      const per = clean(l).match(/^(?:ανά|ανα|per)\s+(πιάτο|πιατο|μερίδα|μεριδα|plate|portion|serving)$/i);
+      if (per) { yieldQty = 1; yieldUnit = /μερ|portion|serving/i.test(per[1]) ? "μερίδα" : "πιάτο"; return; }
       const y = l.match(/(\d+(?:[.,]\d+)?)\s*(μερίδες|μερίδα|μεριδες|άτομα|ατομα|portions|servings)/i);
-      if (y && !yieldQty) { yieldQty = parseFloat(y[1].replace(",", ".")); yieldUnit = /άτομ|ατομ/i.test(y[2]) ? "άτομα" : "μερίδες"; if (l.length < 30) continue; }
-      if (head(l, ING)) { section = "ing"; continue; }
-      if (head(l, STEP)) { section = "step"; continue; }
-      if (head(l, NOTE)) { section = "note"; continue; }
-      if (head(l, PLATE)) { section = "plate"; continue; }
-      if (!title && !section) { title = l.replace(/[*#_]/g, "").trim(); continue; }
+      if (y && !yieldQty && !inComps) { yieldQty = parseFloat(y[1].replace(",", ".")); yieldUnit = /άτομ|ατομ/i.test(y[2]) ? "άτομα" : "μερίδες"; if (l.length < 30) return; }
+      if (head(l, COMP) && title) { inComps = true; cur = null; return; }
+      if (head(l, NOTE)) { inComps = false; section = "note"; return; }
+      if (head(l, PLATE)) { inComps = false; section = "plate"; return; }
+      if (inComps) {
+        if (head(l, STEP)) { if (cur) cur.sect = "step"; return; }
+        if (head(l, ING)) { if (cur) cur.sect = "ing"; return; }
+        if (!cur || (looksLikeName(l, k) && (cur.ings.length || cur.steps.length))) { cur = { name: clean(l), ings: [], steps: [], sect: "ing" }; comps.push(cur); return; }
+        if (isIng(l) && cur.sect === "ing") { cur.ings.push(l); return; }
+        cur.sect = "step"; cur.steps.push(strip(l)); return;
+      }
+      if (head(l, ING)) { section = "ing"; return; }
+      if (head(l, STEP)) { section = "step"; return; }
+      if (!title && !section) { title = clean(l); return; }
       if (section === "ing") ings.push(l);
-      else if (section === "step") steps.push(l.replace(/^(\d+|[α-ω])[.)]\s*/i, ""));
+      else if (section === "step") steps.push(strip(l));
       else if (section === "note") notes.push(l);
-      else if (section === "plate") plating.push(l.replace(/^(\d+|[α-ω])[.)]\s*/i, ""));
-      else if (/^\d/.test(l) && l.length < 60) ings.push(l);
+      else if (section === "plate") plating.push(strip(l));
+      else if (isIng(l) && l.length < 60) ings.push(l);
       else steps.push(l.replace(/^(\d+)[.)]\s*/, ""));
-    }
-    if (!title && !ings.length && !steps.length) return [];
+    });
+    if (!title && !ings.length && !steps.length && !comps.length) return [];
+    // Title in capitals (e.g. "PAKCHOI") reads better in normal case.
+    if (title && title === title.toUpperCase() && /[A-Za-zΑ-Ωα-ω]/.test(title)) title = title.charAt(0) + title.slice(1).toLowerCase();
     return [{ title: title || "Συνταγή χωρίς όνομα", category: "Άλλο", yieldQty, yieldUnit: yieldQty ? yieldUnit : "μερίδες", prepMin: null, cookMin: null,
-      ingredients: parseIngredients(ings.join("\n")), steps, allergens: [], notes: notes.join("\n"), plate: "", platingSteps: plating }];
+      ingredients: parseIngredients(ings.join("\n")), steps, allergens: [], notes: notes.join("\n"), plate: "", platingSteps: plating,
+      components: comps.map((c) => ({ name: c.name, ingredients: parseIngredients(c.ings.join("\n")), steps: c.steps })) }];
   }
 
   const fromAi = (r) => ({
@@ -857,7 +917,26 @@
     if (!error) (data || []).forEach((p) => { S.prices[p.name_key] = { name: p.name, price: Number(p.price), unit: p.unit }; });
   }
   // Cost of one ingredient line after scaling. Returns { cost, approx } or null when it can't be priced.
-  function lineCost(i, factor) {
+  // Component recipes ("συνταγές συστατικών"): a main ingredient like "45 g σάλτσα ταχίνι"
+  // links to the component named "Σάλτσα ταχίνι" of the same recipe.
+  const findComp = (r, name) => r && (r.components || []).find((c) => c.name && priceKey(c.name) === priceKey(name));
+  function compStats(c) {
+    let weight = 0, cost = 0, missing = 0;
+    (c.ingredients || []).forEach((i) => {
+      if (i.qty == null) return;
+      const info = unitInfo(i.unit);
+      if (info && info.dim !== "c") weight += i.qty * info.f;
+      const lc = lineCost(i, 1);
+      if (lc) cost += lc.cost; else missing++;
+    });
+    return { weight, cost, missing };
+  }
+  function lineCost(i, factor, r) {
+    const comp = findComp(r, i.name);
+    if (comp && i.qty != null) {
+      const info = unitInfo(i.unit), st = compStats(comp);
+      if (info && info.dim !== "c" && st.weight > 0) return { cost: i.qty * factor * info.f * (st.cost / st.weight), approx: st.missing > 0, comp: comp.name };
+    }
     const p = S.prices[priceKey(i.name)];
     if (!p || i.qty == null) return null;
     const pdim = PRICE_DIM[p.unit];
@@ -868,25 +947,39 @@
     if (pdim !== "c" && info.dim !== "c") return { cost: (base / 1000) * p.price, approx: true }; // g <-> ml, as if water
     return null;
   }
-  const isPortions = (u) => /μερίδ|μεριδ|άτομ|ατομ|portion|serving|τεμ/i.test(u || "");
+  const isPortions = (u) => /μερίδ|μεριδ|άτομ|ατομ|πιάτ|πιατ|portion|serving|plate|τεμ/i.test(u || "");
   function guessPriceUnit(i) { const info = unitInfo(i.unit); return info ? (info.dim === "v" ? "l" : info.dim === "c" ? "τεμ" : "kg") : (i.unit ? "kg" : "τεμ"); }
 
   function costingHtml(r, factor, target) {
     const ro = !!S.viewing;
     let total = 0, missing = 0, approx = false;
-    const rows = (r.ingredients || []).map((i, idx) => {
+    const row = (i, idx, f, c) => {
       const p = S.prices[priceKey(i.name)];
-      const c = lineCost(i, factor);
-      if (i.qty != null) { if (c) { total += c.cost; approx = approx || c.approx; } else missing++; }
-      const q = showQty(i.qty != null ? i.qty * factor : null, i.unit);
+      const q = showQty(i.qty != null ? i.qty * f : null, i.unit);
       const unit = p ? p.unit : guessPriceUnit(i);
+      if (c && c.comp) return `<tr>
+        <td class="c-name">${esc(i.name)}<small>${esc([q.q, q.u].filter(Boolean).join(" "))}</small></td>
+        <td class="c-price"><span class="hint">από «${esc(c.comp)}»</span></td>
+        <td class="c-cost">${euro(c.cost)}${c.approx ? "*" : ""}</td></tr>`;
       return `<tr>
         <td class="c-name">${esc(i.name)}<small>${esc([q.q, q.u].filter(Boolean).join(" "))}</small></td>
         <td class="c-price"><input id="price-${idx}" type="number" min="0" step="0.01" inputmode="decimal" placeholder="τιμή" value="${p ? esc(p.price) : ""}" ${ro ? "disabled" : ""} aria-label="Τιμή για ${esc(i.name)}">
           <select id="punit-${idx}" ${ro ? "disabled" : ""} aria-label="Μονάδα τιμής">${["kg", "l", "τεμ"].map((u) => `<option ${u === unit ? "selected" : ""}>${u}</option>`).join("")}</select></td>
         <td class="c-cost">${i.qty == null ? '<span class="hint">—</span>' : c ? euro(c.cost) + (c.approx ? "*" : "") : '<span class="hint">χωρίς τιμή</span>'}</td>
       </tr>`;
+    };
+    let rows = pricedLines(r).filter((x) => !x.comp).map((x) => {
+      const c = lineCost(x.i, factor, r);
+      if (x.i.qty != null) { if (c) { total += c.cost; approx = approx || c.approx; } else missing++; }
+      return row(x.i, x.idx, factor, c);
     }).join("");
+    (r.components || []).forEach((comp) => {
+      const st = compStats(comp);
+      const lines = pricedLines(r).filter((x) => x.comp === comp);
+      if (!lines.length) return;
+      rows += `<tr class="comp-row"><td colspan="3"><b>${esc(comp.name)}</b><small>${st.weight ? `Παρτίδα ≈ ${esc(fmtBase("m", st.weight).q)} ${esc(fmtBase("m", st.weight).u)} · ` : ""}${euro(st.cost)}${st.weight ? ` · ${euro(st.cost / st.weight * 1000)} / kg` : ""}</small></td></tr>`
+        + lines.map((x) => row(x.i, x.idx, 1, lineCost(x.i, 1))).join("");
+    });
     const portions = isPortions(r.yieldUnit) && target ? target : null;
     const perPortion = portions ? total / portions : null;
     const sell = r.sellPrice;
@@ -905,9 +998,17 @@
       ${approx ? `<p class="hint">* Υπολογισμός με μετατροπή όγκου σε βάρος (σαν νερό), κατά προσέγγιση.</p>` : ""}
       ${!portions && r.yieldQty ? `<p class="hint">Για κόστος ανά μερίδα και food cost, βάλε «μερίδες» ως μονάδα απόδοσης.</p>` : ""}`;
   }
+  // Every ingredient line that can carry a price: main ingredients (not linked to a component) and component ingredients.
+  function pricedLines(r) {
+    const out = [];
+    (r.ingredients || []).forEach((i) => out.push({ i, comp: null, idx: out.length }));
+    (r.components || []).forEach((comp) => (comp.ingredients || []).forEach((i) => out.push({ i, comp, idx: out.length })));
+    return out;
+  }
   function wireCosting(r, factor, target) {
     const box = $("costBox"); if (!box || S.viewing) return;
-    (r.ingredients || []).forEach((i, idx) => {
+    pricedLines(r).forEach(({ i, idx }) => {
+      if (!$("price-" + idx)) return;
       const save = async () => {
         const raw = $("price-" + idx).value.trim().replace(",", ".");
         const unit = $("punit-" + idx).value;
@@ -1060,6 +1161,7 @@
             ${r.steps.length ? `<ol class="steps">${r.steps.map((s) => `<li><span>${esc(s)}</span></li>`).join("")}</ol>` : ""}
             ${r.notes ? `<div class="ticket"><strong>Σημειώσεις σεφ</strong>${esc(r.notes)}</div>` : ""}</section>
         </div>
+        ${componentsHtml(r)}
         ${platingHtml(r, platingUrl ? `<img src="${esc(platingUrl)}" alt="">` : "")}</article>
         <div class="share-cta">Θέλεις κι εσύ να κρατάς τις συνταγές σου οργανωμένες; <a class="btn primary" href="${esc(appUrl())}">Φτιάξε το δικό σου Τετράδιο Κουζίνας</a></div>`;
       const sc = $("scale");
@@ -1171,7 +1273,12 @@
     S.recipes.forEach((r) => {
       const amount = S.order[r.id]; if (!(amount > 0)) return;
       const factor = r.yieldQty ? amount / r.yieldQty : amount;
-      (r.ingredients || []).forEach((i) => {
+      const add = (i, factor, rr) => {
+        const comp = findComp(rr, i.name);
+        if (comp && i.qty != null) {
+          const info = unitInfo(i.unit), st = compStats(comp);
+          if (info && info.dim !== "c" && st.weight > 0) { (comp.ingredients || []).forEach((ci) => add(ci, (i.qty * factor * info.f) / st.weight, null)); return; }
+        }
         const key = priceKey(i.name); if (!key) return;
         const label = String(i.name).split(",")[0].trim();
         if (i.qty == null) { if (!noQty.has(key)) noQty.set(key, label); return; }
@@ -1182,7 +1289,8 @@
         const c = lineCost(i, factor);
         if (c) b.cost += c.cost; else b.hasCost = false;
         buckets.set(bk, b);
-      });
+      };
+      (r.ingredients || []).forEach((i) => add(i, factor, r));
     });
     const lines = [...buckets.values()].sort((a, b) => a.label.localeCompare(b.label, "el")).map((b) => {
       const f = b.dim ? fmtBase(b.dim, b.amount) : { q: nf(b.amount, b.amount >= 100 ? 0 : 2), u: b.unit };

@@ -315,6 +315,18 @@ window.I18N_EN = {
     "+ Φωτογραφία στησίματος": "+ Plating photo",
     "Στημένο πιάτο": "Plated dish",
 
+    // component recipes
+    "Συνταγές συστατικών": "Component recipes",
+    "Για συστατικά του πιάτου που φτιάχνονται χωριστά, π.χ. σάλτσες, γλάσα, πουρέδες. Αν το όνομα είναι ίδιο με ένα υλικό του πιάτου (π.χ. «45 g σάλτσα ταχίνι»), συνδέονται αυτόματα στην κοστολόγηση και στην παραγγελία.": "For parts of the dish made separately, e.g. sauces, glazes, purées. If the name matches an ingredient of the dish (e.g. “45 g tahini sauce”), they link automatically in costing and the order list.",
+    "+ Προσθήκη συνταγής συστατικού": "+ Add component recipe",
+    "π.χ. Σάλτσα ταχίνι": "e.g. Tahini sauce",
+    "Όνομα συστατικού": "Component name",
+    "190 g ταχίνι\n40 g σόγια\n60 g χυμός λάιμ": "190 g tahini\n40 g soy sauce\n60 g lime juice",
+    "Χτυπάμε όλα τα υλικά στο thermomix": "Blend everything in the Thermomix",
+    "συνταγή ↓": "recipe ↓",
+    "Η εκτέλεση είναι στις συνταγές συστατικών, παρακάτω.": "The method is in the component recipes below.",
+    "πιάτο": "plate",
+
     // notifications
     "Δεν έχεις ειδοποιήσεις ακόμα.": "No notifications yet.",
     "Οι ειδοποιήσεις ενεργοποιήθηκαν": "Phone notifications on",
@@ -358,5 +370,8 @@ window.I18N_EN = {
     [/^(.+) \(αντίγραφο\)$/, "$1 (copy)"],
     [/^Μπες στην ομάδα κουζίνας «(.+)» με κωδικό (.+)$/, "Join the kitchen team “$1” with code $2"],
     [/^Συνταγή: (.+)$/, "Recipe: $1"],
+    [/^από «(.+)»$/, "from “$1”"],
+    [/^Παρτίδα ≈ (.+)$/, "Batch ≈ $1"],
+    [/^Παρτίδα ≈ (.+?) · (.+)$/, "Batch ≈ $1 · $2"],
   ],
 };
